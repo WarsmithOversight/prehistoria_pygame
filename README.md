@@ -1,4 +1,4 @@
-# Prehistoria Pi Game – To-Do List
+# Prehistoria Pygame – To-Do List
 
 ## 1. Map Generation
 - [ ] Add constant `USE_NATURAL_TERRAIN = True/False` to toggle between natural vs. boardgame tiles  
