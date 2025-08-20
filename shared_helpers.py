@@ -26,7 +26,6 @@ def initialize_shared_helper_states(persistent_state):
             5: {"name": "NW", "vector": (-0.8660254, -0.5)}
         },
         "edges": {
-            # ✅ FIX: Re-ordered to match the verified bitmask/asset convention.
             0: {"name": "NW", "corner_pair": (5, 0)},
             1: {"name": "NE", "corner_pair": (0, 1)},
             2: {"name": "E",  "corner_pair": (1, 2)},
@@ -60,10 +59,9 @@ def initialize_shared_helper_states(persistent_state):
         }
     }
 
-    # ✅ UNIFIED: The single, verified order for ALL operations.
     verified_order = ["NW", "NE", "E", "SE", "SW", "W"]
     persistent_state["pers_neighbor_order"] = verified_order
-    persistent_state["pers_bitmask_neighbor_order"] = verified_order # Kept for clarity in rendering code
+    persistent_state["pers_bitmask_neighbor_order"] = verified_order
 
     # Map edges → neighbor directions (pointy-top convention)
     persistent_state["pers_edge_to_neighbor"] = {
@@ -71,7 +69,6 @@ def initialize_shared_helper_states(persistent_state):
         "SE": "SE", "SW": "SW", "W": "W"
     }
     
-    # ... (rest of the file is unchanged) ...
     persistent_state["pers_axial_dirs"] = {
         0: (+1,  0), 1: (+1, -1), 2: ( 0, -1),
         3: (-1,  0), 4: (-1, +1), 5: ( 0, +1)
@@ -142,6 +139,21 @@ def get_neighbor_in_direction(q, r, direction_name, persistent_state):
     parity = "odd" if (r & 1) else "even"
     dq, dr = oddr[parity][direction_name]
     return (q + dq, r + dr)
+
+def get_direction_bit(start_coord, end_coord, persistent_state):
+    """
+    Calculates the bitmask value for a connection from a start_coord 
+    to an adjacent end_coord, based on the universal bitmask order.
+    """
+    # Fetches the order directly from persistent_state
+    order = persistent_state.get("pers_bitmask_neighbor_order", [])
+    for i, direction in enumerate(order):
+        # Finds the neighbor in a given direction
+        neighbor = get_neighbor_in_direction(start_coord[0], start_coord[1], direction, persistent_state)
+        # If the neighbor matches the target, return the corresponding bit
+        if neighbor == end_coord:
+            return 1 << (5 - i)
+    return 0
 
 def edge_neighbor(q, r, edge_name, persistent_state):
     dir_name = persistent_state["pers_edge_to_neighbor"][edge_name]
@@ -329,5 +341,5 @@ def get_tagged_points_with_angle_dist(tiledata, center_coord, tag_key, tag_value
             dist = axial_distance(q, r, center_q, center_r)
             points.append({'angle': angle, 'dist': dist, 'coord': coord})
 
-    print(f"[helpers] ✅ Found {len(points)} points with tag '{tag_key}' and calculated their geometry.")
+    print(f"[geometry] ✅ Found {len(points)} points with tag '{tag_key}' and calculated their geometry.")
     return points

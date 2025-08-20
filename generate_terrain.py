@@ -15,12 +15,13 @@ HIGHLANDS_RANGE = 1                     # The hex distance from a mountain for a
 # Set to a number to override, or None to calculate dynamically.
 # These fallbacks are based on sqrt(region_count) to scale with the map's "radius".
 LOWLANDS_DISTANCE_STEPS = None             # Defines the N farthest distance tiers that become lowlands
-CENTRAL_DESERT_DISTANCE_STEPS = None    # The N most inland distance tiers will become desert.
+CENTRAL_DESERT_DISTANCE_STEPS = None       # The N most inland distance tiers will become desert.
 # ──────────────────────────────────────────────────
 # 🏞️ Terrain Assignment Rulebook
 # ──────────────────────────────────────────────────
 # This list defines the priority order for assigning terrain to a tile.
 # The generator will check rules from top to bottom and stop at the first match.
+
 TERRAIN_TAG_PRIORITY = [
     ("is_mountain",),
     ("is_lake",),

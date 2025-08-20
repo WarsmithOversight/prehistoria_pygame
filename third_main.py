@@ -71,7 +71,7 @@ persistent_state["pers_region_count"] = 16  # N extra after 2 starting
 persistent_state["pers_region_radius"] = 3
 
 # 📷 Zoom states
-variable_state["var_current_zoom"] = 0.4
+variable_state["var_current_zoom"] = 0.2
 variable_state["var_is_zooming"] = False
 variable_state["var_zoom_last_tick"] = 0
 persistent_state["pers_zoom_config"] = {
