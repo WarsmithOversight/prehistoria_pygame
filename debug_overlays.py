@@ -3,7 +3,7 @@
 
 from shared_helpers import hex_geometry
 import random
-from generate_terrain import TERRAIN_TAG_PRIORITY
+from world_generation.generate_terrain import REGIONAL_TAG_PRIORITY
 
 # ──────────────────────────────────────────────────
 # ⚙️ Debug Toggles
@@ -239,7 +239,7 @@ def add_terrain_tag_overlay(tiledata, notebook, persistent_state):
         tile = tiledata[(q, r)]
 
         # Loop through the terrain tag priority rules
-        for rule in TERRAIN_TAG_PRIORITY:
+        for rule in REGIONAL_TAG_PRIORITY:
 
             # Check if all tags in the current rule are present on the tile
             if all(tile.get(tag) for tag in rule):

@@ -1,32 +1,33 @@
 
 import random, math
+from collections import Counter
 from shared_helpers import axial_distance, get_neighbors, get_neighbor_in_direction, get_tiles_bordering_tag
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
 # ──────────────────────────────────────────────────
 
 DEBUG = True
+TERRAIN_GENERATION_MODE = 'REGIONAL' # Can be 'GLOBAL' or 'REGIONAL'
 
 # ⚙️ World Generation Weights and Cutoffs
 # These variables control the size and distribution of terrain features.
 MOUNTAIN_FACTOR = 20                    # The percentage of all land tiles that will be tagged as mountains.
-HIGHLANDS_RANGE = 1                     # The hex distance from a mountain for a tile to be considered 'highlands'.
+mountain_range_RANGE = 1                     # The hex distance from a mountain for a tile to be considered 'mountain_range'.
 
 # Set to a number to override, or None to calculate dynamically.
-# These fallbacks are based on sqrt(region_count) to scale with the map's "radius".
-LOWLANDS_DISTANCE_STEPS = None             # Defines the N farthest distance tiers that become lowlands
+# These "None" fallbacks are based on sqrt(region_count) to scale with the map's "radius".
+LOWLANDS_TARGET_PERCENT = 15 # The percentage of land tiles we want to be lowlands.
 CENTRAL_DESERT_DISTANCE_STEPS = None       # The N most inland distance tiers will become desert.
+
 # ──────────────────────────────────────────────────
 # 🏞️ Terrain Assignment Rulebook
 # ──────────────────────────────────────────────────
-# This list defines the priority order for assigning terrain to a tile.
-# The generator will check rules from top to bottom and stop at the first match.
-
-TERRAIN_TAG_PRIORITY = [
+# This list defines the priority order for the GLOBAL generation mode.
+GLOBAL_TAG_PRIORITY = [
     ("is_mountain",),
     ("is_lake",),
     ("is_coast", "windward"),
-    ("is_coast", "highlands"),
+    ("is_coast", "mountain_range"),
     ("is_coast", "lowlands"),
     ("is_coast",),
     ("windward", "leeward"),
@@ -35,8 +36,52 @@ TERRAIN_TAG_PRIORITY = [
     ("windward",),
     ("adjacent_scrubland",),
     ("leeward",),
-    ("highlands",),
+    ("mountain_range",),
     ("lowlands",),
+    ("is_ocean",),
+]
+
+# This list defines the priority order for the new REGIONAL biome-based mode.
+REGIONAL_TAG_PRIORITY = [
+    # --- Highest Priority: Core Features ---
+    ("is_mountain",),
+    ("is_lake",),
+        
+    # --- Biome-Specific Valleys (Windward + Leeward) ---
+    ("temperate", "windward", "leeward"),
+    ("tropical", "windward", "leeward"),
+    ("floodplains", "windward", "leeward"),
+    # Note: Arid valleys are intentionally excluded to prevent Plains there.
+
+    # --- Biome-Specific Slopes (Windward or Leeward) ---
+    ("arid", "windward"),
+    ("temperate", "windward"),
+    ("floodplains", "windward"),
+    ("tropical", "windward"),
+
+    ("arid", "leeward"),
+    ("temperate", "leeward"),
+    ("tropical", "leeward"),
+    ("floodplains", "leeward"),
+
+    # --- Biome-Specific Mountain Ranges (Most specific rules first) ---
+    ("tropical", "mountain_range"),  # Tropical mountains are special
+
+    # --- Biome-Specific Lowlands ---
+    ("arid", "lowlands"),
+    ("temperate", "lowlands"),
+    ("floodplains", "lowlands"),
+    # Note: tropical lowlands will fall through to the general "lowlands" rule.
+
+    # --- General Fallbacks (Geography then Biome) ---
+    ("mountain_range",), # For Arid and Temperate mountains not covered above.
+    ("lowlands",),       # For Tropical and Floodplain lowlands.
+    ("arid",),
+    ("tropical",),
+    ("temperate",),
+    ("floodplains",),
+
+    # --- Final Water Fallback ---
     ("is_ocean",),
 ]
 
@@ -46,21 +91,41 @@ TERRAIN_TAG_PRIORITY = [
 # This dictionary maps the terrain tags (from the priority list) to the
 # specific art assets or terrain types that should be assigned to them.
 TERRAIN_TAG_TERRAIN = {
+    # --- Core Features ---
     ("is_mountain",):               ["Mountain"],
-    ("windward",):                  ["Woodlands", "Hills"],
-    ("leeward",):                   ["Scrublands"],
-    ("highlands",):                 ["Scrublands", "Highlands"],
-    ("is_coast",):                  ["Plains"],
-    ("lowlands",):                  ["Marsh"],
-    ("central_desert",):            ["DesertDunes"],
-    ("adjacent_scrubland",):        ["Scrublands"],
-    ("windward", "central_desert"): ["Scrublands"],
-    ("is_ocean",):                  ["OceanCalm"],
-    ("is_coast", "highlands"):      ["Hills"],
-    ("is_coast", "windward"):       ["Woodlands"],
-    ("windward", "leeward"):        ["Plains"],
-    ("is_coast", "lowlands"):       ["Marsh"],
     ("is_lake",):                   ["Lake"],
+    ("is_ocean",):                  ["OceanCalm"],
+
+    # --- Biome-Specific Valleys ---
+    ("temperate", "windward", "leeward"): ["Plains"],
+    ("tropical", "windward", "leeward"):  ["Plains"],
+    ("floodplains", "windward", "leeward"):["Plains"],
+
+    # --- Biome-Specific Slopes ---
+    ("arid", "windward"):           ["Woodlands"],
+    ("temperate", "windward"):      ["Woodlands"],
+    ("tropical", "windward"):       ["Woodlands"],
+    ("floodplains", "windward"):    ["Woodlands"],
+    ("arid", "leeward"):            ["DesertDunes"],
+    ("temperate", "leeward"):       ["Scrublands"],
+    ("tropical", "leeward"):        ["Scrublands"],
+    ("floodplains", "leeward"):     ["Plains"],
+
+    # --- Biome-Specific Mountain Ranges ---
+    ("tropical", "mountain_range"): ["Woodlands", "Highlands"], # As you requested
+
+    # --- Biome-Specific Lowlands ---
+    ("arid", "lowlands"):           ["DesertDunes"],
+    ("temperate", "lowlands"):      ["Plains"],
+    ("floodplains", "lowlands"):    ["Marsh"],
+
+    # --- General Fallbacks ---
+    ("mountain_range",):            ["Scrublands", "Highlands"],
+    ("lowlands",):                  ["Marsh"],
+    ("arid",):                      ["Scrublands"],
+    ("tropical",):                  ["Woodlands"],
+    ("temperate",):                 ["Scrublands"],
+    ("floodplains",):               ["Plains"],
 }
 
 # ──────────────────────────────────────────────────
@@ -113,6 +178,8 @@ def tag_ocean_coastline(tiledata, persistent_state):
     if DEBUG:
         # Report the number of tiles that were successfully tagged.
         print(f"[ocean] ✅ {count} 'is_coast' gameplay tags assigned.")
+
+# After all rivers have been generated, before filling in terrain, resolve shorelines.
 
 def resolve_shoreline_bitmasks(tiledata, persistent_state):
     """
@@ -247,61 +314,87 @@ def add_distance_from_mountain_to_tiledata(tiledata):
         print(f"[mountains] ✅  Distance from mountain assigned to {len(tiledata)} tiles.")
 
 # ────────────────────────────────────────────────────────
-# 🌾 Tag Lowlands, Highlands, Central Desert
+# Assign Region Biomes for standard play
+# ────────────────────────────────────────────────────────
+
+# ────────────────────────────────────────────────────────
+# 🌾 Tag Lowlands, mountain_range, Central Desert
 # ────────────────────────────────────────────────────────
 
 def tag_lowlands(tiledata, persistent_state):
     """
-    Tags tiles as 'lowlands' based on discrete distance steps from mountains.
-    If LOWLANDS_DISTANCE_STEPS is None, it calculates a dynamic value.
+    Tags a target percentage of land as 'lowlands' by selecting the N
+    farthest distance-from-mountain steps that get closest to the target.
     """
-    # ⚙️ Determine the number of steps to use.
-    num_steps_to_take = LOWLANDS_DISTANCE_STEPS
-    if num_steps_to_take is None:
+    # ──────────────────────────────────────────────────
+    # ⚙️ STEP 1: Setup and Targets
+    # ──────────────────────────────────────────────────
+    land_coords = persistent_state.get("pers_quick_tile_lookup", [])
+    if not land_coords:
+        if DEBUG: print("[lowlands] ⚠️ No land tiles found to tag as lowlands.")
+        return
 
-        # Fallback logic: Calculate steps based on the map's scale.
-        region_count = persistent_state.get("pers_region_count", 16)
-        
-        # We divide the result by 2 to keep lowlands less common than deserts.
-        num_steps_to_take = max(1, int(math.sqrt(region_count) / 2))
+    # Calculate our ideal number of lowland tiles from the target percentage.
+    target_tile_count = int(len(land_coords) * (LOWLANDS_TARGET_PERCENT / 100.0))
 
-    # 🏞️ Find Eligible Tiles
-    # Get all passable land tiles that could potentially be lowlands.
-    candidates = [
-        tile for tile in tiledata.values()
-        if tile.get("passable")
-           and tile.get("terrain") is None
-           and tile.get("dist_to_mountain") is not None
+    # ──────────────────────────────────────────────────
+    # 📊 STEP 2: Count Tiles at Each Distance
+    # ──────────────────────────────────────────────────
+    # Get a list of all distance-to-mountain values from every land tile.
+    all_distances = [
+        tiledata[coord]["dist_to_mountain"]
+        for coord in land_coords
+        if "dist_to_mountain" in tiledata[coord]
     ]
-    if not candidates:
-        if DEBUG: print("[tiledata] ⚠️ No eligible candidates found for lowlands.")
+    if not all_distances:
+        if DEBUG: print("[lowlands] ⚠️ No mountain distances found to calculate lowlands.")
         return
 
-    # 📏 Find Lowland Distance Bands
-    # Find all unique discrete distance-to-mountain values on the map, sorted from farthest to nearest.
-    unique_distances = sorted(list(set(t["dist_to_mountain"] for t in candidates)), reverse=True)
+    # Count how many tiles exist at each discrete distance (e.g., 50 tiles at dist 8).
+    distance_counts = Counter(all_distances)
+    # Get a unique, sorted list of the distances, from farthest to nearest.
+    sorted_unique_distances = sorted(distance_counts.keys(), reverse=True)
+
+    # ──────────────────────────────────────────────────
+    # 🎯 STEP 3: Find the Best Number of Steps
+    # ──────────────────────────────────────────────────
+    best_fit = {"steps": 0, "delta": float('inf')}
+    cumulative_tiles = 0
+    # Iterate through the distance steps, from 1 step (farthest tiles) outwards.
+    for i, distance in enumerate(sorted_unique_distances):
+        steps = i + 1
+        cumulative_tiles += distance_counts[distance]
+        
+        # Check how close this number of tiles is to our target.
+        delta = abs(cumulative_tiles - target_tile_count)
+        
+        # If this is the closest we've gotten so far, save this number of steps.
+        if delta < best_fit["delta"]:
+            best_fit["steps"] = steps
+            best_fit["delta"] = delta
     
-    # Determine which of these distance values qualify as "lowland" distances based on the LOWLANDS_DISTANCE_STEPS constant.
-    lowland_distances = set(unique_distances[:num_steps_to_take])
-
-    if not lowland_distances:
-        if DEBUG: print("[tiledata] ⚠️ Not enough unique distance steps to define lowlands.")
-        return
-
-    # ✍️ Apply Lowlands Tag
-    # Tag every tile whose distance matches one of the identified lowland distance bands.
+    # ──────────────────────────────────────────────────
+    # 🏷️ STEP 4: Tag the Winning Tiles
+    # ──────────────────────────────────────────────────
+    # Get the final list of distances that will be tagged as lowlands.
+    lowland_distances = set(sorted_unique_distances[:best_fit["steps"]])
+    
     count = 0
-    for tile in candidates:
-        if tile["dist_to_mountain"] in lowland_distances:
+    for coord in land_coords:
+        tile = tiledata[coord]
+        if tile.get("dist_to_mountain") in lowland_distances:
             tile["lowlands"] = True
             count += 1
             
     if DEBUG:
-        print(f"[lowlands] ✅ {count} lowlands tagged (distances: {sorted(list(lowland_distances), reverse=True)}).")
+        percent_coverage = (count / len(land_coords)) * 100
+        print(f"[lowlands] ✅ Tagged {count} lowlands across {best_fit['steps']} distance steps "
+              f"({percent_coverage:.1f}% of land, target was {LOWLANDS_TARGET_PERCENT}%).")
 
-def tag_highlands(tiledata):
 
-    # ✍️ Apply Highlands Tag
+def tag_mountain_range(tiledata):
+
+    # ✍️ Apply mountain_range Tag
     # Loop through every tile on the map to determine if it should be tagged.
     count = 0
     for tile in tiledata.values():
@@ -312,13 +405,13 @@ def tag_highlands(tiledata):
             tile["passable"] and
             tile.get("terrain") is None and
             tile.get("dist_to_mountain") is not None and
-            tile["dist_to_mountain"] <= HIGHLANDS_RANGE # N
+            tile["dist_to_mountain"] <= mountain_range_RANGE # N
         ):
-            tile["highlands"] = True
+            tile["mountain_range"] = True
             count += 1
 
     if DEBUG:
-        print(f"[highlands] ✅ {count} highland tiles tagged (threshold ≤ {HIGHLANDS_RANGE}).")
+        print(f"[mountain_range] ✅ {count} highland tiles tagged (threshold ≤ {mountain_range_RANGE}).")
 
 def tag_central_desert(tiledata, persistent_state):
     """
@@ -414,8 +507,8 @@ def add_windward_and_leeward_tags(tiledata, persistent_state):
     """
     for (q, r), tile in tiledata.items():
 
-        # Only process tiles that are in the highlands to optimize the check.
-        if not tile.get("highlands"):
+        # Only process tiles that are in the mountain_range to optimize the check.
+        if not tile.get("mountain_range"):
             continue
 
         tile_dist = tile.get("dist_from_center", 999)
@@ -459,6 +552,13 @@ def fill_in_terrain_from_tags(tiledata):
     """
     Assigns terrain to tiles based on a priority list of rules.
     """
+
+    # Select the appropriate rulebook based on the global toggle
+    if TERRAIN_GENERATION_MODE == 'REGIONAL':
+        priority_list_to_use = REGIONAL_TAG_PRIORITY
+    else: # Default to GLOBAL
+        priority_list_to_use = GLOBAL_TAG_PRIORITY
+
     count = 0
     for tile in tiledata.values():
 
@@ -468,7 +568,7 @@ def fill_in_terrain_from_tags(tiledata):
 
         # ✍️ Find and Assign Terrain
         # Iterate through the priority list from highest to lowest priority.
-        for rule in TERRAIN_TAG_PRIORITY:
+        for rule in priority_list_to_use:
 
             # Check if the tile has ALL the tags required by the current rule.
             if all(tile.get(tag) for tag in rule):

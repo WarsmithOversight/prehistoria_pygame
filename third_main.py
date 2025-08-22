@@ -3,15 +3,16 @@
 
 import pygame
 
-from initialize_tiledata import (
+from world_generation.initialize_tiledata import (
     initialize_tiledata, initialize_region_seeds,
     add_distance_from_center_to_tiledata, add_distance_from_ocean_to_tiledata,
     tag_continent_spine, calculate_and_store_map_center,
+    calculate_monsoon_bands
 )
-from generate_terrain import (
+from world_generation.generate_terrain import (
     tag_mountains, tag_initial_ocean,
     tag_ocean_coastline, resolve_shoreline_bitmasks,
-    tag_lowlands, tag_highlands,
+    tag_lowlands, tag_mountain_range,
     tag_central_desert, add_windward_and_leeward_tags,
     fill_in_terrain_from_tags,tag_adjacent_scrublands,
 )
@@ -23,11 +24,13 @@ from load_assets import (
     load_river_assets, load_river_mouth_assets,
     load_river_end_assets,
 )
+from world_generation.tile import create_tile_objects_from_data
 from shared_helpers import initialize_shared_helper_states, hex_to_pixel
 from debug_overlays import add_all_debug_overlays
-from elevation import run_elevation_generation
+from world_generation.elevation import run_elevation_generation
 from exports import run_all_exports
-from rivers import run_river_generation
+from world_generation.rivers import run_river_generation
+from world_generation.biomes import assign_biomes_to_regions
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -43,7 +46,7 @@ GENERATE_EXPORTS = True
 # 🔹 Init Pygame
 pygame.init()
 pygame.font.init()
-screen = pygame.display.set_mode((1280, 1024))
+screen = pygame.display.set_mode((1280, 840))
 pygame.display.set_caption("Mini Map Renderer")
 clock = pygame.time.Clock()
 
@@ -68,10 +71,9 @@ persistent_state["pers_tile_hex_h"]    = 260   # Dimensions of artwork within PN
 
 # 🌎 Region states
 persistent_state["pers_region_count"] = 16  # N extra after 2 starting
-persistent_state["pers_region_radius"] = 3
 
 # 📷 Zoom states
-variable_state["var_current_zoom"] = 0.2
+variable_state["var_current_zoom"] = 0.15
 variable_state["var_is_zooming"] = False
 variable_state["var_zoom_last_tick"] = 0
 persistent_state["pers_zoom_config"] = {
@@ -91,27 +93,30 @@ tiledata = initialize_tiledata(persistent_state, variable_state)  # normalize + 
 calculate_and_store_map_center(tiledata, persistent_state)
 add_distance_from_center_to_tiledata(tiledata, persistent_state)
 add_distance_from_ocean_to_tiledata(tiledata, persistent_state)
+calculate_monsoon_bands(tiledata, persistent_state)
 tag_continent_spine(tiledata, persistent_state)
 
 # --- ⛰️ Tag Fundamental Geography ---
 tag_initial_ocean(tiledata, variable_state)
 tag_ocean_coastline(tiledata, persistent_state) # Defines "is_coast"
 tag_mountains(tiledata, persistent_state)       # Defines mountains and "dist_to_mountain"
+run_elevation_generation(tiledata, persistent_state)
+assign_biomes_to_regions(tiledata, persistent_state)
 
 # --- 🔭 Tag More Detailed Features ---
 tag_lowlands(tiledata, persistent_state)
-tag_highlands(tiledata)
+tag_mountain_range(tiledata)
 tag_central_desert(tiledata, persistent_state)
 tag_adjacent_scrublands(tiledata, persistent_state)
 add_windward_and_leeward_tags(tiledata, persistent_state)
 
-# --- 🏞️ Elevation, Rivers, and Shorelines ---
-run_elevation_generation(tiledata, persistent_state)
+# --- 🏞️ Rivers, and Shorelines ---
 river_paths = run_river_generation(tiledata, persistent_state)
 resolve_shoreline_bitmasks(tiledata, persistent_state)
 
 # --- 🎨 Add Terrain ---
 fill_in_terrain_from_tags(tiledata)
+create_tile_objects_from_data(tiledata)
 
 # --- 🐛 Debug Sequence ---
 add_all_debug_overlays(tiledata, river_paths, notebook, persistent_state, variable_state)

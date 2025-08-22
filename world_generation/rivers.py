@@ -180,10 +180,10 @@ def _get_meander_decision(current_tile, eligible_neighbors):
         return False
 
     # Rule 2: Get the pre-computed normalized distance from the ocean.
-    norm_dist = current_tile.get('norm_dist_from_ocean', 0.0)
+    coastal_scale_val = current_tile.get('coastal_scale', 0.0)
     
     # Rule 3: Return True only if the distance is greater than the threshold.
-    return norm_dist > MEANDER_THRESHOLD
+    return coastal_scale_val > MEANDER_THRESHOLD
 
 def _process_river_endpoints(tiledata, river_paths, persistent_state):
     """

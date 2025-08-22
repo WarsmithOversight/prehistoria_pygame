@@ -158,6 +158,26 @@ def load_tileset_assets(assets_state, persistent_state):
             sprite.blit(tint_surface, (0, 0))
             print(f"[assets] 🎨 Applied a hex-masked sand tint to '{filename}'.")
 
+        elif terrain_name == "Woodlands":
+            # This color is a deep, humid green to create a more tropical feel.
+            TINT_COLOR = (20, 100, 70, 40) # RGBA
+            tint_surface = pygame.Surface(sprite.get_size(), flags=pygame.SRCALPHA)
+
+            # Define the vertices of the hexagonal tint overlay
+            center_x = tile_canvas_w / 2
+            center_y = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
+            w, h = tile_hex_w, tile_hex_h
+            hex_points = [
+                (center_x, center_y - h / 2), (center_x + w / 2, center_y - h / 4),
+                (center_x + w / 2, center_y + h / 4), (center_x, center_y + h / 2),
+                (center_x - w / 2, center_y + h / 4), (center_x - w / 2, center_y - h / 4),
+            ]
+
+            # Draw the tinted hexagon and blit it onto the sprite
+            pygame.draw.polygon(tint_surface, TINT_COLOR, hex_points)
+            sprite.blit(tint_surface, (0, 0))
+            print(f"[assets] 🎨 Applied a jungle green tint to '{filename}'.")
+
         elif terrain_name == "Mountain":
 
             # Desaturate the mountain sprite by 30%
@@ -215,11 +235,10 @@ def load_tileset_assets(assets_state, persistent_state):
 def load_coast_assets(assets_state, persistent_state):
     """
     Loads and parses the special coastline auto-tiling assets.
-    Looks in a specific 'sprites/coast' directory.
     """
 
     # 🌊 Define Paths & Configuration
-    tile_path = "sprites/coast" # <-- Specific directory
+    tile_path = "sprites/coast"
     tile_prefix = "hex"
     terrain_name = "Coast"
     
@@ -291,9 +310,9 @@ def load_river_assets(assets_state, persistent_state):
     """
 
     # Define Paths & Configuration
-    tile_path = "sprites/rivers"  # <-- Directory for river sprites
+    tile_path = "sprites/rivers" 
     tile_prefix = "hex"
-    terrain_name = "River"        # <-- Key for the assets dictionary
+    terrain_name = "River"
 
     # Re-use existing geometry and zoom data
     tile_canvas_w = persistent_state["pers_tile_canvas_w"]
@@ -355,13 +374,12 @@ def load_river_assets(assets_state, persistent_state):
 def load_river_mouth_assets(assets_state, persistent_state):
     """
     Loads and parses the river mouth auto-tiling assets from a new directory.
-    - Looks in 'sprites/river_mouths'.
     """
 
     # Define Paths & Configuration
-    tile_path = "sprites/river_mouths" # <-- New directory
+    tile_path = "sprites/river_mouths"
     tile_prefix = "hex"
-    terrain_name = "RiverMouth"        # <-- New key for the assets dictionary
+    terrain_name = "RiverMouth"
 
     # Re-use existing geometry and zoom data
     tile_canvas_w = persistent_state["pers_tile_canvas_w"]

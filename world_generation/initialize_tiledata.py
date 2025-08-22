@@ -161,12 +161,15 @@ def initialize_region_seeds(persistent_state, variable_state):
         # Pick one of the eligible candidates to add to the chosen set.
         chosen_region_centers_ids.append(random.choice(eligible_ids))
 
-    # Save the Final List of Center Coordinates
+    # Save the Final List of Center Coordinates, including adjacency data
     persistent_state["pers_region_centers"] = [
-        (lattice_point["q"], lattice_point["r"])
+        lattice_point
         for lattice_point in variable_state["var_lattice_grid"]
         if lattice_point["lattice_id"] in chosen_region_centers_ids
     ]
+
+    for i, region_center_data in enumerate(persistent_state["pers_region_centers"]):
+        region_center_data["region_id"] = i + 1
 
     # Report the number of chosen centers.
     if DEBUG:
@@ -183,7 +186,7 @@ def initialize_tiledata(persistent_state, variable_state):
     # ──────────────────────────────────────────────────
 
     # Get the region radius and a list of all region center coordinates.
-    region_radius = persistent_state.get("pers_region_radius", 3)
+    region_radius = 3
     region_centers  = persistent_state.get("pers_region_centers") or []
 
     if not region_centers:
@@ -193,18 +196,19 @@ def initialize_tiledata(persistent_state, variable_state):
     min_padding = 2
 
     # Create empty dicts to store data for the new regions.
-    variable_state["var_region_tiles"] = {}  # region_id -> set((q,r))
-    variable_state["var_regions"] = {}       # region_id -> meta (center, radius)
+    persistent_state["pers_region_sets"] = {}  # region_id -> set((q,r))
+    variable_state["var_regions"] = {}         # This can remain temporary
     all_passable_coords = set()
 
     # Loop through all region_centers
-    for region_index, (cq, cr) in enumerate(region_centers, start=1):
+    for region_index, region_data in enumerate(region_centers, start=1):
+        cq, cr = region_data["q"], region_data["r"]
 
         # Create the set of tiles for each region.
         tiles = set(expand_region_seed(cq, cr, region_radius))
 
         # Store the tiles and metadata in temporary state.
-        variable_state["var_region_tiles"][region_index] = tiles
+        persistent_state["pers_region_sets"][region_index] = tiles
         variable_state["var_regions"][region_index] = {
             "center": (cq, cr),
             "radius": region_radius,
@@ -237,9 +241,17 @@ def initialize_tiledata(persistent_state, variable_state):
         offset_r += 1
 
     # Apply the normalization offset to the stored region center coordinates.
-    raw_centers = persistent_state["pers_region_centers"]
-    normalized_centers = [(q + offset_q, r + offset_r) for q, r in raw_centers]
-    persistent_state["pers_region_centers"] = normalized_centers
+    for center_data in persistent_state["pers_region_centers"]:
+        center_data["q"] += offset_q
+        center_data["r"] += offset_r
+
+    # Normalize the coordinates in our persistent region sets as well.
+    normalized_region_sets = {}
+    for region_id, tile_set in persistent_state["pers_region_sets"].items():
+        normalized_set = {(q + offset_q, r + offset_r) for q, r in tile_set}
+        normalized_region_sets[region_id] = normalized_set
+    persistent_state["pers_region_sets"] = normalized_region_sets
+
     if DEBUG:
         print(f"[tiledata] ✅ Region centers normalized.")
 
@@ -259,7 +271,7 @@ def initialize_tiledata(persistent_state, variable_state):
 
     # Prepare a quick lookup for which region a tile belongs to before normalization.
     coord_to_region = {}
-    for rid, tiles in variable_state["var_region_tiles"].items():
+    for rid, tiles in persistent_state["pers_region_sets"].items():
         for c in tiles:
             coord_to_region[c] = rid
 
@@ -274,7 +286,7 @@ def initialize_tiledata(persistent_state, variable_state):
             z_value = z_formula(nr) 
 
             # Determine if the tile is a part of a region (passable) or void (impassable).
-            region_id = coord_to_region.get((q, r))
+            region_id = coord_to_region.get((nq, nr))
             if region_id is not None:
 
                 # This is a land tile.
@@ -297,6 +309,29 @@ def initialize_tiledata(persistent_state, variable_state):
                     "type": "tile"
                 }
                 var_bounds.append((nq, nr))
+
+    # First, create a quick lookup map of {lattice_id: region_id}
+    lattice_to_region_id_map = {
+        center_data["lattice_id"]: center_data["region_id"]
+        for center_data in persistent_state["pers_region_centers"]
+    }
+
+    for region_data in persistent_state["pers_region_centers"]:
+        # Find the center tile in the main tiledata dictionary
+        center_coord = (region_data["q"], region_data["r"])
+        center_tile = tiledata.get(center_coord)
+
+        if center_tile:
+            # Translate the adjacent_to list from lattice_ids to region_ids
+            adjacent_region_ids = {
+                lattice_to_region_id_map[adj_id]
+                for adj_id in region_data["adjacent_to"]
+                if adj_id in lattice_to_region_id_map
+            }
+            
+            # Now, stamp the data onto the center tile
+            center_tile["is_region_center"] = True
+            center_tile["adjacent_regions"] = adjacent_region_ids
 
     # Save the list of impassable tiles for future ocean masking.
     variable_state["var_bounds"] = var_bounds
@@ -425,19 +460,51 @@ def add_distance_from_ocean_to_tiledata(tiledata, persistent_state):
                 # Add the neighbor to the end of the queue for later processing.
                 frontier.append((neighbor_coord, dist + 1))
 
-    # 📏 Normalize Distances from Ocean
-    # Find the maximum distance value for scaling.
-    all_ocean_dists = [tiledata[c]['dist_from_ocean'] for c in visited if tiledata[c].get('dist_from_ocean') is not None]
-    max_dist = max(all_ocean_dists) if all_ocean_dists else 1.0
-
-    # Convert the absolute distances into a normalized value between 0.0 and 1.0.
-    for coord in visited:
-        dist = tiledata[coord].get('dist_from_ocean', 0)
-        tiledata[coord]['norm_dist_from_ocean'] = dist / max_dist
-    
     if DEBUG:
         print(f"[tiledata] ✅ dist_from_ocean calculated for all tiles.")
         print("[tiledata] ✅ Normalized ocean distance calculated for all land tiles.")
+
+def calculate_monsoon_bands(tiledata, persistent_state):
+    """
+    Calculates east-west bands based on q-coordinate distance from the horizontal center.
+    This creates a gradient from the horizontal middle of the continent to the edges.
+    
+    Adds the following keys to land tiles:
+    - `abs_dist_from_q_center`: The absolute distance from the central q-value.
+    - `norm_dist_from_q_center`: The normalized distance, from 0.0 (center) to 1.0 (farthest edge).
+    """
+    # Get all land tile coordinates for processing
+    land_coords = persistent_state.get("pers_quick_tile_lookup", [])
+    if not land_coords:
+        if DEBUG: print("[elevation] ⚠️ No land tiles found for monsoon bands.")
+        return
+
+    # Find the horizontal (q-axis) min, max, and center of the landmass
+    all_q_values = [q for q, r in land_coords]
+    min_q = min(all_q_values)
+    max_q = max(all_q_values)
+    center_q = (min_q + max_q) / 2.0
+
+    # Determine the maximum possible q-distance for normalization
+    # This is the distance from the center to the farthest edge.
+    max_abs_q_dist = max_q - center_q
+    if max_abs_q_dist == 0: # Avoid a division-by-zero error on a single-file map
+        max_abs_q_dist = 1.0
+
+    # Calculate and store the absolute and normalized distances for each land tile
+    for q, r in land_coords:
+        tile = tiledata.get((q, r))
+        if tile:
+            # Calculate the absolute distance from the horizontal center
+            abs_dist = abs(q - center_q)
+            tile['abs_dist_from_q_center'] = abs_dist
+            
+            # Normalize the distance to a 0.0-1.0 scale
+            norm_dist = abs_dist / max_abs_q_dist
+            tile['norm_dist_from_q_center'] = norm_dist
+    
+    if DEBUG:
+        print(f"[elevation] ✅ Monsoon bands (q-distance) calculated.")
 
 def tag_continent_spine(tiledata, persistent_state):
     """
@@ -455,10 +522,6 @@ def tag_continent_spine(tiledata, persistent_state):
 
     # Get the calculated center of the continent to use as the spine's hub.
     spine_hub_coord = persistent_state.get("pers_map_center")
-
-    # ──────────────────────────────────────────────────
-    #  HUB VALIDATION: Ensure the Hub is on Land
-    # ──────────────────────────────────────────────────
 
     # Check if the calculated center exists and is a passable land tile.
     if not spine_hub_coord:
@@ -486,24 +549,19 @@ def tag_continent_spine(tiledata, persistent_state):
     if not spine_hub_coord:
         if DEBUG: print("[tiledata] ❌ Could not find any valid land tile for spine hub.")
         return
-
-    # ──────────────────────────────────────────────────
-    # 🗺️ Identify Spoke Destinations
-    # ──────────────────────────────────────────────────
     
     centers = persistent_state.get("pers_region_centers", [])
     spoke_destinations = []
-    for center_coord in centers:
+
+    for region_data in centers:
+        # Extract the coordinate tuple from the dictionary first
+        center_coord = (region_data["q"], region_data["r"])
         center_tile = tiledata.get(center_coord)
 
         # A destination must be near the coast to ensure spokes radiate outwards.
         if center_tile and center_tile.get("dist_from_ocean", 0) <= min_inland_distance:
             if center_coord != spine_hub_coord:
-                spoke_destinations.append(center_coord)
-    
-    # ──────────────────────────────────────────────────
-    # 🛤️ Generate Paths and Tag Tiles
-    # ──────────────────────────────────────────────────
+                spoke_destinations.append(center_coord) # Now this correctly appends the tuple
 
     # Tag the hub tile itself as the origin point of all spokes.
     if spine_hub_coord in tiledata:
