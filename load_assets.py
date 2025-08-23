@@ -1,7 +1,7 @@
 # load_assets.py
 # A dedicated module for loading, processing, and caching all game assets.
 
-import os, pygame, math
+import os, pygame
 from shared_helpers import build_zoom_steps
 
 DEBUG = True
@@ -9,6 +9,73 @@ DEBUG = True
 # ──────────────────────────────────────────────────
 # ⚙️ Initialization
 # ──────────────────────────────────────────────────
+
+def load_player_assets(assets_state, persistent_state):
+    """
+    Loads and processes all player token sprites.
+    """
+    # ──────────────────────────────────────────────────
+    # ⚙️ Setup
+    # ──────────────────────────────────────────────────
+    assets_path = "sprites/player_token"
+    zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+    
+    # Define how large the token should be relative to the hex tile width
+    TOKEN_SCALE_FACTOR = 0.70 
+    tile_hex_w = persistent_state["pers_tile_hex_w"]
+
+    player_assets = {}
+
+    # ──────────────────────────────────────────────────
+    # 🔄 Load, Parse, and Scale
+    # ──────────────────────────────────────────────────
+    for filename in os.listdir(assets_path):
+        if not filename.endswith(".png"):
+            continue
+
+        # Correctly parse the name, removing the variant and extension
+        # e.g., "frog_01.png" -> "frog"
+        species_name = filename.rsplit('_', 1)[0]
+        
+        full_path = os.path.join(assets_path, filename)
+        sprite = pygame.image.load(full_path).convert_alpha()
+
+        # --- Resize the base sprite to fit the hex tile ---
+        # Calculate the target width based on the hex width and our scale factor.
+        target_w = int(tile_hex_w * TOKEN_SCALE_FACTOR)
+        
+        # Calculate the new height to maintain the sprite's aspect ratio.
+        original_w, original_h = sprite.get_size()
+        aspect_ratio = original_h / original_w
+        target_h = int(target_w * aspect_ratio)
+        
+        # Overwrite the original large sprite with the newly scaled one.
+        sprite = pygame.transform.smoothscale(sprite, (target_w, target_h))
+
+        # Calculate a centered blit offset based on this specific sprite's dimensions
+        blit_offset = (-sprite.get_width() / 2, -sprite.get_height() / 2)
+
+        # Pre-scale the sprite for all zoom levels (Good work here!)
+        sprite_by_zoom = {}
+        ow, oh = sprite.get_size()
+        for z in zoom_steps:
+            if abs(z - 1.0) < 1e-6:
+                sprite_by_zoom[z] = sprite
+            else:
+                tw, th = max(1, int(ow * z)), max(1, int(oh * z))
+                scaled = pygame.transform.smoothscale(sprite, (tw, th))
+                sprite_by_zoom[z] = scaled
+
+        # Store the complete asset data
+        player_assets[species_name] = {
+            "sprite": sprite,
+            "scale": sprite_by_zoom,
+            "blit_offset": blit_offset,
+        }
+
+    assets_state["player_assets"] = player_assets
+    print(f"[assets] ✅ Loaded {len(player_assets)} player token assets.")
+
 
 def initialize_asset_states(persistent_state):
     """

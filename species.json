@@ -1,0 +1,22 @@
+{
+  "frog": {
+    "lineage": "Frog",
+    "starting_species": "Frog",
+    "sprite": "frog",
+    "starting_region_preference": [
+      "floodplains",
+      "tropical"
+    ],
+    "base_movement": 5,
+    "movement_costs": {
+      "default": 1,
+      "desert": 0,
+      "scrublands": 0,
+      "highlands": 0,
+      "hills": 0
+    },
+    "special_abilities": [
+      "river_movement"
+    ]
+  }
+}

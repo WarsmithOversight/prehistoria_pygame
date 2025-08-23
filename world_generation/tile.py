@@ -5,6 +5,7 @@ class Tile:
     
     def __init__(self, coord, initial_data):
         self.q, self.r = coord
+        self.is_selected = False
         for key, value in initial_data.items():
             setattr(self, key, value)
 

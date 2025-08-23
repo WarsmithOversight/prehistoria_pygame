@@ -85,6 +85,24 @@ class CameraController:
         variable_state["var_render_offset"] = tuple(self.offset)
         print(f"[Camera] ✅ Map centered with offset {tuple(self.offset)}.")
 
+    def center_on_tile(self, q, r, persistent_state, variable_state):
+        """Calculates the offset to center the view on a specific hex coordinate."""
+        # 1. Get screen center
+        screen_w, screen_h = persistent_state["pers_screen"].get_size()
+        screen_center_px = (screen_w / 2, screen_h / 2)
+        
+        # 2. Get the target tile's world pixel position (at 1x zoom)
+        # We temporarily ignore the current zoom and offset for this calculation.
+        temp_variable_state = {"var_current_zoom": 1.0, "var_render_offset": (0, 0)}
+        target_world_px = hex_to_pixel(q, r, persistent_state, temp_variable_state)
+        
+        # 3. Calculate the new offset needed to align the target with the screen center,
+        #    accounting for the current zoom level.
+        self.offset[0] = screen_center_px[0] - (target_world_px[0] * self.zoom)
+        self.offset[1] = screen_center_px[1] - (target_world_px[1] * self.zoom)
+        
+        print(f"[Camera] ✅ Centered on tile ({q},{r}).")
+
     def handle_events(self, events, persistent_state):
         """Processes events for panning and zooming."""
 

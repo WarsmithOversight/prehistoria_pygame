@@ -16,6 +16,8 @@ FONT_CACHE = {}
 # ⚙️ Initialization & Core Loop
 # ──────────────────────────────────────────────────
 
+# In renderer.py
+
 def initialize_render_states(persistent_state):
     """
     Initializes and stores all render-specific configurations,
@@ -27,22 +29,24 @@ def initialize_render_states(persistent_state):
     # Create a reusable helper function for the vertical position offset.
     vert_offset = lambda r: r * Z_ROW_MULTIPLIER
 
-    # Use the helper in the main formulas dictionary
+    # Z-Order Formulas
     persistent_state["pers_z_formulas"] = {
 
-        # --- Base Terrain ---
+        # --- Layer 1: Core World ---
         "tile":          lambda r: 1.0 + vert_offset(r),
+        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0001, # Just above its tile
 
-        # --- Debug Overlays ---
-        "debug_icon":    lambda r: 1.0 + vert_offset(r) + 0.0003,
-        "terrain_tag":   lambda r: 1.0 + vert_offset(r) + 0.0004,
-        "coordinate":    lambda r: 1.0 + vert_offset(r) + 0.0005,
-        "continent_spine": lambda r: 1.0 + vert_offset(r) + 0.0006,
-        "region_border": lambda r: 1.0 + vert_offset(r) + 0.5,
+        # --- Layer 2: Debug Overlays ---
+        "debug_icon":    lambda r: 2.0 + 0.1,
+        "terrain_tag":   lambda r: 2.0 + 0.2,
+        "coordinate":    lambda r: 2.0 + 0.3,
+        "continent_spine": lambda r: 2.0 + 0.4,
+        "region_border": lambda r: 2.0 + 0.5,
     }
     
     print("[renderer] ✅ Render states and z-formulas initialized.")
 
+    
 def get_font(size):
     """Return a cached SysFont of the given size."""
 
@@ -308,7 +312,7 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                     screen.blit(final_sprite, (px + rox, py + roy))
                                                
     # Check if the tile object has the 'hovered' attribute and if it's True
-    if getattr(drawable, 'hovered', False):
+    if getattr(drawable, 'hovered', False) or getattr(drawable, 'is_selected', False):
 
         # Get the dictionary of pre-scaled glow masks.
         glow_masks = assets_state.get("glow_masks_by_zoom")
@@ -398,6 +402,30 @@ def edge_line_type_interpreter(screen, drawable, persistent_state, assets_state,
     # Draw the line on the screen
     pygame.draw.line(screen, color, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), thickness)
 
+def player_token_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """
+    Renders the player token.
+    """
+    current_zoom = variable_state.get("var_current_zoom", 1.0)
+    
+    # Get pixel coordinates for the player's hex
+    q = getattr(drawable, 'q', drawable.get('coord', [0, 0])[0])
+    r = getattr(drawable, 'r', drawable.get('coord', [0, 0])[1])
+    px, py = hex_to_pixel(q, r, persistent_state, variable_state)
+        
+    # Get the correctly pre-scaled sprite and its offset
+
+    sprite_map = drawable.get("scale") or {1.0: drawable["sprite"]}
+    final = sprite_map.get(current_zoom)
+    off_x, off_y = drawable["blit_offset"]
+
+    if final:
+        # Scale the offset for the current zoom level
+        offset_scale = current_zoom
+        ox = int(off_x * offset_scale)
+        oy = int(off_y * offset_scale)
+        screen.blit(final, (px + ox, py + oy))
+
 # ──────────────────────────────────────────────────
 # ⌨️ Interpreter Dispatch
 # ──────────────────────────────────────────────────
@@ -407,6 +435,7 @@ TYPEMAP = {
     "circle": circle_type_interpreter,
     "text": text_type_interpreter,
     "edge_line": edge_line_type_interpreter,
+    "player_token": player_token_interpreter,
 }
 
 
