@@ -2,6 +2,8 @@
 # main entry point. Runs game loop, initalizers and initializes dicts.
 
 import pygame
+from map_interactor import MapInteractor
+from camera_controller import CameraController
 
 from world_generation.initialize_tiledata import (
     initialize_tiledata, initialize_region_seeds,
@@ -22,7 +24,8 @@ from renderer import (
 from load_assets import (
     load_tileset_assets, load_coast_assets,
     load_river_assets, load_river_mouth_assets,
-    load_river_end_assets,
+    load_river_end_assets, initialize_asset_states,
+    create_glow_mask
 )
 from world_generation.tile import create_tile_objects_from_data
 from shared_helpers import initialize_shared_helper_states, hex_to_pixel
@@ -50,6 +53,7 @@ screen = pygame.display.set_mode((1280, 840))
 pygame.display.set_caption("Mini Map Renderer")
 clock = pygame.time.Clock()
 
+
 # 📔 Initialize dicts
 persistent_state = {}
 trigger_state = {}
@@ -58,30 +62,25 @@ notebook = {}
 tiledata = {}
 assets_state = {}
 river_paths = {}
+persistent_state["pers_screen"] = screen
 
 # ⚙️ Add config to dicts
 initialize_shared_helper_states(persistent_state)
 initialize_render_states(persistent_state)
+initialize_asset_states(persistent_state)
 
-persistent_state["pers_screen"] = screen
-persistent_state["pers_tile_canvas_w"] = 256   # PNG width
-persistent_state["pers_tile_canvas_h"] = 384   # PNG height
-persistent_state["pers_tile_hex_w"]    = 256   # Dimensions of artwork within PNG
-persistent_state["pers_tile_hex_h"]    = 260   # Dimensions of artwork within PNG
-
-# 🌎 Region states
-persistent_state["pers_region_count"] = 16  # N extra after 2 starting
-
-# 📷 Zoom states
-variable_state["var_current_zoom"] = 0.15
-variable_state["var_is_zooming"] = False
-variable_state["var_zoom_last_tick"] = 0
 persistent_state["pers_zoom_config"] = {
     "min_zoom": 0.10,
     "max_zoom": 1.00,
-    "zoom_interval": 0.05,   # 0.2, 0.25, 0.30, ... , 1.0
-    "settle_ms": 180         # debounce after wheel stops
+    "zoom_interval": 0.02,
+    "settle_ms": 120,
 }
+variable_state["var_current_zoom"] = 1
+variable_state["var_render_offset"] = (0, 0)
+
+
+# 🌎 Region states
+persistent_state["pers_region_count"] = 16  # N extra after 2 starting
 
 # ──────────────────────────────────────────────────
 # 🌎 World Generation
@@ -116,10 +115,10 @@ resolve_shoreline_bitmasks(tiledata, persistent_state)
 
 # --- 🎨 Add Terrain ---
 fill_in_terrain_from_tags(tiledata)
-create_tile_objects_from_data(tiledata)
+tile_objects = create_tile_objects_from_data(tiledata)
 
 # --- 🐛 Debug Sequence ---
-add_all_debug_overlays(tiledata, river_paths, notebook, persistent_state, variable_state)
+add_all_debug_overlays(tile_objects, river_paths, notebook, persistent_state, variable_state)
 
 # --- 📁 Load Assets ---
 load_tileset_assets(assets_state, persistent_state)
@@ -127,28 +126,18 @@ load_coast_assets(assets_state, persistent_state)
 load_river_assets(assets_state, persistent_state)
 load_river_mouth_assets(assets_state, persistent_state)
 load_river_end_assets(assets_state, persistent_state)
+create_glow_mask(persistent_state, assets_state)
 
 # --- 📷 Exports ---
 if GENERATE_EXPORTS:
     run_all_exports(tiledata, persistent_state, assets_state)
 
-# --- 🎥 Initial Camera Setup ---
-screen_w, screen_h = persistent_state["pers_screen"].get_size()
-screen_center_px = (screen_w / 2, screen_h / 2)
-
-map_center_q, map_center_r = persistent_state["pers_map_center"]
-
-# Temporarily set offset to 0 to calculate the world pixel coordinate
-variable_state["var_render_offset"] = (0, 0) 
-map_center_px = hex_to_pixel(
-    map_center_q, map_center_r, persistent_state, variable_state
-)
-
-# The final offset is the difference required to move the map center to the screen center
-offset_x = screen_center_px[0] - map_center_px[0]
-offset_y = screen_center_px[1] - map_center_px[1]
-variable_state["var_render_offset"] = (offset_x, offset_y)
-print(f"[main] ✅ Camera centered with offset {variable_state['var_render_offset']}")
+# ──────────────────────────────────────────────────
+# 🎬 Initialize Controllers
+# ──────────────────────────────────────────────────
+camera_controller = CameraController(persistent_state, variable_state)
+camera_controller.center_on_map(persistent_state, variable_state)
+map_interactor = MapInteractor()
 
 # ──────────────────────────────────────────────────
 # ⏰ Main Loop
@@ -156,38 +145,41 @@ print(f"[main] ✅ Camera centered with offset {variable_state['var_render_offse
 running = True
 print(f"[main] ✅ Main game loop initiated.")
 while running:
-    for event in pygame.event.get():
+    # Get all user events once at the start of the frame.
+    events = pygame.event.get()
+    mouse_pos = pygame.mouse.get_pos()
+
+    # The only event handled directly in the loop is quitting the game.
+    for event in events:
         if event.type == pygame.QUIT:
             running = False
+            
+    # ──────────────────────────────────────────────────
+    # ⚙️ Update State
+    # ──────────────────────────────────────────────────
+    # 1. Handle direct camera controls like keyboard panning and scroll wheel zooming.
+    camera_controller.handle_events(events, persistent_state)
+    
+    # 2. Handle map-specific interactions like hovering, selecting, and dragging.
+    #    The interactor returns the result of any drag motion.
+    pan_delta = map_interactor.handle_events(events, mouse_pos, tile_objects, persistent_state, variable_state)
+    
+    # 3. If the interactor reported a drag, command the camera to pan by that amount.
+    if pan_delta != (0, 0):
+        camera_controller.pan(pan_delta[0], pan_delta[1])
+        
+    # 4. Finalize the camera's state for this frame and publish it to the
+    #    global variable_state for the renderer to use.
+    camera_controller.update(persistent_state, variable_state)
+        
+    # ──────────────────────────────────────────────────
+    # 🎨 Render
+    # ──────────────────────────────────────────────────
+    # The renderer takes all the prepared data and draws the final scene.
+    render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state)
 
-    # handle_zoom_debounce(persistent_state, variable_state)
-    render_giant_z_pot(screen, tiledata, notebook, persistent_state, assets_state, variable_state)
-
+    # Update the full display and cap the framerate.
     pygame.display.flip()
-    clock.tick(30)
+    clock.tick(60)
 
 pygame.quit()
-
-# Zoom Event Handler
-# for event in pygame.event.get():
-#     if event.type == pygame.MOUSEWHEEL:
-#         zoom_config = persistent_state["pers_zoom_config"]
-#         scale = variable_state["var_scale_factor"]
-#         # wheel.y: +1 up, -1 down (invert if needed)
-#         scale *= (1.0 + 0.1 * event.y)  # 10% per notch feels nice
-#         scale = max(zoom_config["min_zoom"], min(zoom_config["max_zoom"], scale))
-#         variable_state["var_scale_factor"] = scale
-#         variable_state["var_is_zooming"] = True
-#         variable_state["var_zoom_last_tick"] = pygame.time.get_ticks()
-
-# def handle_zoom_debounce(persistent_state, variable_state):
-#     if not variable_state.get("var_is_zooming"):
-#         return
-#     now = pygame.time.get_ticks()
-#     if now - variable_state["var_zoom_last_ms"] >= persistent_state["pers_zoom_config"]["settle_ms"]:
-#         # snap and exit zooming mode
-#         from shared_helpers import snap_zoom
-#         snapped = snap_zoom(persistent_state, variable_state)
-#         variable_state["var_current_zoom"] = snapped
-#         variable_state["var_is_zooming"] = False
-

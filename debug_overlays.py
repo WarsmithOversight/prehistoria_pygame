@@ -10,7 +10,7 @@ from world_generation.generate_terrain import REGIONAL_TAG_PRIORITY
 # ──────────────────────────────────────────────────
 # Set these to True or False to control which overlays are active.
 SHOW_HEX_CENTERS    = False     # Renders a small circle at the center of each hex.
-SHOW_COORDINATES    = False     # Renders the (q,r) coordinate on each hex.
+SHOW_COORDINATES    = False      # Renders the (q,r) coordinate on each hex.
 SHOW_REGION_BORDERS = False     # Draws lines between different regional IDs.
 SHOW_TERRAIN_TAGS   = False     # Draws a colored circle representing the terrain type.
 SHOW_SPINE          = False     # Draws the continent spine used for elevation.
@@ -48,7 +48,7 @@ OVERLAY_COLORS = {
 # 📷 Individual Overlay Functions
 # ──────────────────────────────────────────────────
 
-def add_spine_overlay(tiledata, notebook, persistent_state):
+def add_spine_overlay(tile_objects, notebook, persistent_state):
     """
     Draws an overlay on spine tiles, with support for trimming the spokes.
     """
@@ -67,9 +67,9 @@ def add_spine_overlay(tiledata, notebook, persistent_state):
     # Iterate through all tiles and add an overlay to those with spine data
     land_coords = persistent_state.get("pers_quick_tile_lookup", [])
     for q, r in land_coords:
-        tile = tiledata[(q, r)]
-        if "spine_data" in tile:
-            data = tile["spine_data"]
+        tile = tile_objects.get((q, r))
+        if tile and hasattr(tile, "spine_data"):
+            data = tile.spine_data
             dist = data["dist_on_spoke"]
             max_dist = data["spoke_max_dist"]
 
@@ -102,19 +102,19 @@ def add_spine_overlay(tiledata, notebook, persistent_state):
                 "color": color, "base_radius": 50, "opacity": 128, "tag": "spine",
             }
 
-def add_hex_center_overlay(tiledata, notebook, persistent_state):
+def add_hex_center_overlay(tile_objects, notebook, persistent_state):
     """Draws a black circle at the mathematical center of every hex."""
-
-    # Get the z-order values from persistent state
-    z_order = persistent_state["pers_z_order"]
-    z_cel_tile = z_order["cel"]["tile"]
-    z_offset = z_order["offset"]["hex_center"]
+    # Get the z-order formula for debug icons
+    z_formulas = persistent_state.get("pers_z_formulas", {})
+    z_formula = z_formulas.get("debug_icon")
+    if not z_formula:
+        print("⚠️ Debug icon z-formula not found in persistent_state.")
+        return
 
     # Iterate through all tiles
-    for (q, r), tile in tiledata.items():
-
-        # Get the base z-order of the tile, or use the default
-        base_z = tile.get("z", z_cel_tile)
+    for (q, r), tile in tile_objects.items():
+        # Calculate the z-order for the overlay
+        overlay_z = z_formula(r)
 
         # Create a unique key for the overlay
         key = f"dbg_center_{q}_{r}"
@@ -122,11 +122,11 @@ def add_hex_center_overlay(tiledata, notebook, persistent_state):
         # Add the circle overlay to the notebook
         notebook[key] = {
             "type": "circle", "coord": (q, r),
-            "z": base_z + z_offset,
+            "z": overlay_z,
             "color": OVERLAY_COLORS["hex_center"], "base_radius": 30,
         }
 
-def add_qr_coordinates_overlay(tiledata, notebook, persistent_state):
+def add_qr_coordinates_overlay(tile_objects, notebook, persistent_state):
     """Draws the (q,r) coordinate as text on each tile."""
 
     # Get the z-order formula for coordinates
@@ -139,7 +139,7 @@ def add_qr_coordinates_overlay(tiledata, notebook, persistent_state):
         return
 
     # Iterate through all tiles
-    for (q, r), tile in tiledata.items():
+    for (q, r), tile in tile_objects.items():
 
         # Calculate the z-order for the text overlay
         overlay_z = z_formula(r)
@@ -151,10 +151,10 @@ def add_qr_coordinates_overlay(tiledata, notebook, persistent_state):
             "z": overlay_z,
             "text": f"{q},{r}",
             "color": (0, 0, 0),
-            "base_size": 16,
+            "base_size": 48,
         }
 
-def add_region_border_overlay(tiledata, notebook, persistent_state, variable_state):
+def add_region_border_overlay(tile_objects, notebook, persistent_state, variable_state):
     """Draws thick black lines between different regions."""
 
     # Initialize sets to track which edges and vertices have been drawn
@@ -164,17 +164,17 @@ def add_region_border_overlay(tiledata, notebook, persistent_state, variable_sta
     # Define line thickness and z-order
     line_thickness = 20
     z_formulas = persistent_state.get("pers_z_formulas", {})
-    z_border = z_formulas.get("region_border", lambda: 1.5)() # Default to 1.5 if not found
+    z_border = z_formulas.get("region_border", lambda r: 1.5)(0) # Pass a dummy 'r'
     
     # Iterate through each tile to find region borders
     land_coords = persistent_state.get("pers_quick_tile_lookup", [])
     for q, r in land_coords:
-        tile = tiledata[(q, r)]
-        if tile.get("region_id") is None: continue
+        tile = tile_objects.get((q, r))
+        if not tile or not hasattr(tile, "region_id"): continue
 
         # Get the geometry for the current tile
         geo = hex_geometry(q, r, persistent_state, variable_state)
-        this_region = tile["region_id"]
+        this_region = tile.region_id
 
         # Loop through each of the tile's edges
         for idx, (p1, p2) in geo["edges"].items():
@@ -182,10 +182,10 @@ def add_region_border_overlay(tiledata, notebook, persistent_state, variable_sta
             
             # Get the coordinates of the neighbor on the other side of the edge
             nq, nr = geo["neighbors"][edge_name]
-            neighbor = tiledata.get((nq, nr))
+            neighbor = tile_objects.get((nq, nr))
 
             # Check if the neighbor exists and is in a different region
-            if not neighbor or neighbor.get("region_id") != this_region:
+            if not neighbor or getattr(neighbor, 'region_id', None) != this_region:
 
                 # Create a consistent key for the edge regardless of direction
                 edge_key = tuple(sorted(((q, r), (nq, nr))))
@@ -220,7 +220,7 @@ def add_region_border_overlay(tiledata, notebook, persistent_state, variable_sta
             "matches_line_thickness": line_thickness,
         }
 
-def add_terrain_tag_overlay(tiledata, notebook, persistent_state):
+def add_terrain_tag_overlay(tile_objects, notebook, persistent_state):
     """
     Draws colored circles representing the highest-priority terrain tag on a tile,
     compatible with single and combined tag rules.
@@ -236,13 +236,14 @@ def add_terrain_tag_overlay(tiledata, notebook, persistent_state):
     # Iterate through all tiles
     land_coords = persistent_state.get("pers_quick_tile_lookup", [])
     for q, r in land_coords:
-        tile = tiledata[(q, r)]
+        tile = tile_objects.get((q, r))
+        if not tile: continue
 
         # Loop through the terrain tag priority rules
         for rule in REGIONAL_TAG_PRIORITY:
 
             # Check if all tags in the current rule are present on the tile
-            if all(tile.get(tag) for tag in rule):
+            if all(getattr(tile, tag, False) for tag in rule):
 
                 # Use the first tag in the rule as the color key
                 color_key = rule[0]
@@ -377,24 +378,24 @@ def add_river_endpoints_overlay(river_paths, notebook, persistent_state):
 # 🛠️ Assembler
 # ──────────────────────────────────────────────────
 
-def add_all_debug_overlays(tiledata, river_paths, notebook, persistent_state, variable_state):
+def add_all_debug_overlays(tile_objects, river_paths, notebook, persistent_state, variable_state):
     """Calls all debug drawable functions based on the toggle switches at the top of the file."""
     
     # Check each toggle and call the corresponding function
     if SHOW_HEX_CENTERS:
-        add_hex_center_overlay(tiledata, notebook, persistent_state)
+        add_hex_center_overlay(tile_objects, notebook, persistent_state)
         
     if SHOW_COORDINATES:
-        add_qr_coordinates_overlay(tiledata, notebook, persistent_state)
+        add_qr_coordinates_overlay(tile_objects, notebook, persistent_state)
         
     if SHOW_REGION_BORDERS:
-        add_region_border_overlay(tiledata, notebook, persistent_state, variable_state)
+        add_region_border_overlay(tile_objects, notebook, persistent_state, variable_state)
         
     if SHOW_TERRAIN_TAGS:
-        add_terrain_tag_overlay(tiledata, notebook, persistent_state)
+        add_terrain_tag_overlay(tile_objects, notebook, persistent_state)
 
     if SHOW_SPINE:
-        add_spine_overlay(tiledata, notebook, persistent_state)
+        add_spine_overlay(tile_objects, notebook, persistent_state)
 
     if SHOW_RIVER_PATHS:
         add_river_path_overlay(river_paths, notebook, persistent_state)

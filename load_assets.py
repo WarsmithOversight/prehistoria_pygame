@@ -1,8 +1,42 @@
 # load_assets.py
 # A dedicated module for loading, processing, and caching all game assets.
 
-import os, pygame
+import os, pygame, math
 from shared_helpers import build_zoom_steps
+
+DEBUG = True
+
+# ──────────────────────────────────────────────────
+# ⚙️ Initialization
+# ──────────────────────────────────────────────────
+
+def initialize_asset_states(persistent_state):
+    """
+    Calculates and stores universal, asset-related geometry and configurations
+    into the persistent_state dictionary.
+    """
+        
+    persistent_state["pers_tile_canvas_w"] = 256   # PNG width
+    persistent_state["pers_tile_canvas_h"] = 384   # PNG height
+    persistent_state["pers_tile_hex_w"]    = 256   # Dimensions of artwork within PNG
+    persistent_state["pers_tile_hex_h"]    = 260   # Dimensions of artwork within PNG
+    
+    canvas_w = persistent_state["pers_tile_canvas_w"]
+    canvas_h = persistent_state["pers_tile_canvas_h"]
+    hex_h = persistent_state["pers_tile_hex_h"]
+
+    # Calculate the center y-position of the hex artwork on the canvas.
+    center_y = canvas_h - (hex_h / 2)
+    center_x = canvas_w / 2
+
+    # Store the calculated blit offset as the single source of truth.
+    persistent_state["pers_asset_blit_offset"] = (-center_x, -center_y)
+    
+    if DEBUG:
+        if "pers_tile_canvas_w" in persistent_state:
+            print(f"[assets] ✅ Key 'pers_tile_canvas_w' successfully added in initialize_asset_states.")
+        print(f"[assets] ✅ Universal asset states loaded.")
+
 
 # ──────────────────────────────────────────────────
 # 🎨 Helper Functions
@@ -62,11 +96,7 @@ def load_tileset_assets(assets_state, persistent_state):
     tile_canvas_h = persistent_state["pers_tile_canvas_h"]
     tile_hex_h   = persistent_state["pers_tile_hex_h"]
     tile_hex_w   = persistent_state["pers_tile_hex_h"]
-
-    # Set up zoom configuration if it doesn't exist
-    persistent_state.setdefault("pers_zoom_config", {
-        "min_zoom": 0.20, "max_zoom": 1.00, "zoom_interval": 0.05
-    })
+    blit_offset = persistent_state["pers_asset_blit_offset"]
 
     # Pre-calculate all possible zoom levels
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
@@ -191,10 +221,7 @@ def load_tileset_assets(assets_state, persistent_state):
             print(f"[assets] 🎨 Desaturated '{filename}'.")
             
         # 📏 Pre-scale for Zoom Levels
-        # Calculate the blit offset to center the hex on its tile canvas
-        center_from_top = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
-        blit_offset = (-tile_canvas_w / 2, -center_from_top)
-        
+    
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
 
@@ -233,6 +260,8 @@ def load_tileset_assets(assets_state, persistent_state):
     print(f"[assets] ✅ Loaded {total_sprites} total sprites across {len(tileset)} terrain types.")
 
 def load_coast_assets(assets_state, persistent_state):
+# Next review: Tint shorelines based on edge-sharing terrain type.
+
     """
     Loads and parses the special coastline auto-tiling assets.
     """
@@ -241,11 +270,7 @@ def load_coast_assets(assets_state, persistent_state):
     tile_path = "sprites/coast"
     tile_prefix = "hex"
     terrain_name = "Coast"
-    
-    # Re-use existing geometry and zoom data
-    tile_canvas_w = persistent_state["pers_tile_canvas_w"]
-    tile_canvas_h = persistent_state["pers_tile_canvas_h"]
-    tile_hex_h = persistent_state["pers_tile_hex_h"]
+    blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
     # Ensure the "Coast" key exists in the tileset
@@ -272,9 +297,6 @@ def load_coast_assets(assets_state, persistent_state):
         # Load and pre-scale sprite
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
-
-        center_from_top = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
-        blit_offset = (-tile_canvas_w / 2, -center_from_top)
         
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
@@ -313,11 +335,7 @@ def load_river_assets(assets_state, persistent_state):
     tile_path = "sprites/rivers" 
     tile_prefix = "hex"
     terrain_name = "River"
-
-    # Re-use existing geometry and zoom data
-    tile_canvas_w = persistent_state["pers_tile_canvas_w"]
-    tile_canvas_h = persistent_state["pers_tile_canvas_h"]
-    tile_hex_h = persistent_state["pers_tile_hex_h"]
+    blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
     # Ensure the "River" key exists in the tileset
@@ -343,9 +361,6 @@ def load_river_assets(assets_state, persistent_state):
         # Load and pre-scale the sprite
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
-
-        center_from_top = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
-        blit_offset = (-tile_canvas_w / 2, -center_from_top)
         
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
@@ -380,11 +395,7 @@ def load_river_mouth_assets(assets_state, persistent_state):
     tile_path = "sprites/river_mouths"
     tile_prefix = "hex"
     terrain_name = "RiverMouth"
-
-    # Re-use existing geometry and zoom data
-    tile_canvas_w = persistent_state["pers_tile_canvas_w"]
-    tile_canvas_h = persistent_state["pers_tile_canvas_h"]
-    tile_hex_h = persistent_state["pers_tile_hex_h"]
+    blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
     if terrain_name not in assets_state["tileset"]:
@@ -409,9 +420,6 @@ def load_river_mouth_assets(assets_state, persistent_state):
         # Load and pre-scale the sprite
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
-
-        center_from_top = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
-        blit_offset = (-tile_canvas_w / 2, -center_from_top)
         
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
@@ -449,9 +457,7 @@ def load_river_end_assets(assets_state, persistent_state):
     terrain_name = "RiverEnd"        # The new, dedicated key for these assets
 
     # Re-use existing geometry and zoom data
-    tile_canvas_w = persistent_state["pers_tile_canvas_w"]
-    tile_canvas_h = persistent_state["pers_tile_canvas_h"]
-    tile_hex_h = persistent_state["pers_tile_hex_h"]
+    blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
     if terrain_name not in assets_state["tileset"]:
@@ -482,9 +488,6 @@ def load_river_end_assets(assets_state, persistent_state):
         # Load and pre-scale the sprite
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
-
-        center_from_top = tile_canvas_h - tile_hex_h + (tile_hex_h / 2)
-        blit_offset = (-tile_canvas_w / 2, -center_from_top)
         
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
@@ -499,3 +502,93 @@ def load_river_end_assets(assets_state, persistent_state):
         assets_state["tileset"][terrain_name].append(entry)
 
     print(f"[assets] ✅ Loaded {len(assets_state['tileset'].get(terrain_name, []))} river end sprites.")
+
+
+# ──────────────────────────────────────────────────
+# 🎨 Config & Constants
+# ──────────────────────────────────────────────────
+GLOW_INNER_BRIGHTNESS = 50 # The solid brightness of the inner hex (0-255)
+GLOW_FADE_PERCENT = 0.4    # The outer 40% of the hex will be a fade-out gradient
+
+# ──────────────────────────────────────────────────
+# 🎨 Asset Generation
+# ──────────────────────────────────────────────────
+
+def create_glow_mask(persistent_state, assets_state):
+    """
+    Creates a full set of pre-scaled hexagonal glow masks, one for each
+    discrete zoom level, and caches them for high-performance rendering.
+    """
+    # ──────────────────────────────────────────────────
+    # ⚙️ Setup & Dependencies
+    # ──────────────────────────────────────────────────
+    canvas_w = persistent_state["pers_tile_canvas_w"]
+    canvas_h = persistent_state["pers_tile_canvas_h"]
+    hex_w = persistent_state["pers_tile_hex_w"]
+    hex_h = persistent_state["pers_tile_hex_h"]
+    
+    # Get all the zoom levels we need to pre-scale for.
+    zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+    
+    # 1. Create a single, high-quality base surface that tightly fits the hexagon artwork.
+    hex_surface = pygame.Surface((hex_w, hex_h), pygame.SRCALPHA)
+    center_x, center_y = hex_w / 2, hex_h / 2
+    
+    # ──────────────────────────────────────────────────
+    # 📐 Define Hexagon Geometry & Draw Base Glow
+    # ──────────────────────────────────────────────────
+    # This part is the same as before, creating the beautiful gradient glow.
+    outer_points = [
+        (center_x, center_y - hex_h / 2), (center_x + hex_w / 2, center_y - hex_h / 4),
+        (center_x + hex_w / 2, center_y + hex_h / 4), (center_x, center_y + hex_h / 2),
+        (center_x - hex_w / 2, center_y + hex_h / 4), (center_x - hex_w / 2, center_y - hex_h / 4)]
+    inner_scale = 1.0 - GLOW_FADE_PERCENT
+    inner_points = []
+    for x, y in outer_points:
+        new_x = center_x + (x - center_x) * inner_scale
+        new_y = center_y + (y - center_y) * inner_scale
+        inner_points.append((new_x, new_y))
+    pygame.draw.polygon(hex_surface, (GLOW_INNER_BRIGHTNESS,) * 3, inner_points)
+    num_gradient_steps = int((hex_h / 2) * GLOW_FADE_PERCENT)
+    for i in range(6):
+        p1_inner, p2_inner = inner_points[i], inner_points[(i + 1) % 6]
+        p1_outer, p2_outer = outer_points[i], outer_points[(i + 1) % 6]
+        for j in range(num_gradient_steps):
+            t = j / num_gradient_steps
+            start_x, start_y = p1_inner[0] * (1 - t) + p1_outer[0] * t, p1_inner[1] * (1 - t) + p1_outer[1] * t
+            end_x, end_y = p2_inner[0] * (1 - t) + p2_outer[0] * t, p2_inner[1] * (1 - t) + p2_outer[1] * t
+            brightness = int(GLOW_INNER_BRIGHTNESS * (1 - t))
+            if brightness > 0:
+                pygame.draw.line(hex_surface, (brightness,) * 3, (start_x, start_y), (end_x, end_y), 2)
+
+    # ──────────────────────────────────────────────────
+    # 🖼️ Pre-scale and Composite For All Zoom Levels
+    # ──────────────────────────────────────────────────
+    glow_masks_by_zoom = {}
+    
+    # Loop through each zoom step and create a perfectly scaled mask.
+    for z in zoom_steps:
+        scaled_canvas_w = max(1, int(canvas_w * z))
+        scaled_canvas_h = max(1, int(canvas_h * z))
+        
+        # Scale the original hex artwork to the target zoom size.
+        scaled_hex_w = max(1, int(hex_w * z))
+        scaled_hex_h = max(1, int(hex_h * z))
+        scaled_hex_surface = pygame.transform.smoothscale(hex_surface, (scaled_hex_w, scaled_hex_h))
+        
+        # Create the final canvas for this zoom level.
+        final_surface_for_zoom = pygame.Surface((scaled_canvas_w, scaled_canvas_h), pygame.SRCALPHA)
+        
+        # Calculate the correct position to blit the scaled artwork onto the scaled canvas.
+        offset_x, offset_y = persistent_state["pers_asset_blit_offset"]
+        blit_pos_x = (scaled_canvas_w / 2) + (offset_x * z)
+        blit_pos_y = (-offset_y * z) - (scaled_hex_h / 2)
+        
+        # Blit our generated glow onto the final canvas for this zoom level.
+        final_surface_for_zoom.blit(scaled_hex_surface, (blit_pos_x, blit_pos_y))
+        
+        # Store the finished, pre-scaled mask in our dictionary.
+        glow_masks_by_zoom[z] = final_surface_for_zoom
+            
+    print(f"[assets] ✅ Pre-scaled hexagonal glow masks created for all zoom levels.")
+    assets_state["glow_masks_by_zoom"] = glow_masks_by_zoom

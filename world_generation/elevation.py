@@ -11,10 +11,10 @@ from shared_helpers import axial_distance, get_tagged_points_with_angle_dist
 DEBUG = True
 # This is the "control panel" for tuning your landscape's feel.
 ELEVATION_WEIGHTS = {
-    "continental": 1,
+    "continental": 0,   # 1
     "topographic": 10,
-    "coastal":     2,
-    "vertical":    2, 
+    "coastal":     1,   # 2
+    "vertical":    0,   # 2
 }
 
 # This prevents coastal land from being at 0 elevation in the continental scale

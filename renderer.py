@@ -55,7 +55,15 @@ def get_font(size):
         FONT_CACHE[size] = font
     return font
 
-def render_giant_z_pot(screen, tiledata, notebook, persistent_state, assets_state, variable_state):
+def get_z_value(drawable):
+    """A universal getter for 'z' that works on both objects and dicts."""
+    if hasattr(drawable, 'z'):
+        return drawable.z
+    elif isinstance(drawable, dict):
+        return drawable.get('z', 0)
+    return 0
+
+def render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state):
     """
     Collects every entry from both tiledata and notebook,
     sorts them all by 'z', and steps through them in order.
@@ -63,29 +71,32 @@ def render_giant_z_pot(screen, tiledata, notebook, persistent_state, assets_stat
     """
 
     # Combine all drawable entries from both the tiledata and the notebook
-    draw_pot = list(tiledata.values()) + list(notebook.values())
+    draw_pot = list(tile_objects.values()) + list(notebook.values())
 
     # Filter out entries missing a 'z' value and count the number skipped
     to_draw = []
     skipped = 0
+
     for entry in draw_pot:
-        if "z" in entry:
+        # This universal check now correctly finds 'z' in both objects and dictionaries
+        has_z = hasattr(entry, 'z') or (isinstance(entry, dict) and 'z' in entry)
+        if has_z:
             to_draw.append(entry)
         else:
             skipped += 1
 
     # Print a debug message if any drawables were skipped
     if DEBUG and skipped:
-        print(f"[renderer] {skipped} drawables skipped (missing 'z' value)")
+        print(f"[renderer] ⚠️ {skipped} drawables skipped (missing 'z' value)")
 
     # Sort the list of drawables by their z-order
-    to_draw.sort(key=lambda d: d.get("z", 0))
+    to_draw.sort(key=get_z_value)
 
     # Render each drawable in z-order
     for drawable in to_draw:
 
         # Get the interpreter for the drawable's type
-        typ = drawable.get("type")
+        typ = getattr(drawable, 'type', None) or drawable.get('type') # Also make this universal
         interpreter = TYPEMAP.get(typ)
         if interpreter:
 
@@ -105,10 +116,10 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     """
 
     # 🖼️ Resolve Sprite and Variants
-    q, r = drawable["coord"]
+    q, r = drawable.q, drawable.r
 
     # Get the terrain type, defaulting to "Base" if not specified
-    terrain = drawable.get("terrain") or "Base"
+    terrain = drawable.terrain or "Base"
     tileset = assets_state["tileset"]
 
     # 0) Early special-cases (example)
@@ -139,11 +150,11 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     entry = None
 
     # Handle the special case for river-aware mountain tiles
-    if terrain == "Mountain" and "river_data" in drawable:
+    if terrain == "Mountain" and hasattr(drawable, 'river_data'):
 
         # Suppress the separate river overlay since the tile itself has the river baked in
-        drawable['suppress_river_overlay'] = True
-        river_bitmask = drawable["river_data"]["bitmask"]
+        drawable.suppress_river_overlay = True
+        river_bitmask = drawable.river_data["bitmask"]
 
         # Find ANY mountain sprite with the correct bitmask
         matching_river_mountains = [
@@ -154,7 +165,6 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
             # Pick one consistently based on the tile's hash to prevent flickering.
             entry = matching_river_mountains[h % len(matching_river_mountains)]
 
-    # --- FALLBACK LOGIC ---
     if entry is None:
         # If no special sprite was found, find a standard base tile.
         non_river_variants = [v for v in variants if "river_bitmask" not in v]
@@ -173,46 +183,38 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
         return
 
     # 🔄 Apply Scaling and Blitting
-    # Get the current zoom and zooming state
     current_zoom = variable_state.get("var_current_zoom", 1.0)
-    is_zooming   = bool(variable_state.get("var_is_zooming"))
-
-    # Snap the zoom to the nearest step for crisp rendering when not actively zooming
-    snapped_zoom = snap_zoom_to_nearest_step(persistent_state, variable_state) if not is_zooming else None
 
     # Get the pixel coordinates for the hex
     px, py = hex_to_pixel(q, r, persistent_state, variable_state)
 
     # Calculate the blit offset to center the sprite on the tile
     off_x, off_y = entry["blit_offset"]
-    offset_scale = current_zoom if is_zooming else snapped_zoom
+
+    # The current_zoom is now guaranteed to be a valid, snapped value.
+    offset_scale = current_zoom
     ox = int(off_x * offset_scale)
     oy = int(off_y * offset_scale)
 
-    # Get the final sprite based on the zoom level
-    if is_zooming:
+    # Get the correct pre-scaled sprite from the cache. This is a fast dictionary lookup.
+    sprite_map = entry.get("scale") or {1.0: entry["sprite"]}
+    final = sprite_map.get(current_zoom)
 
-        # Use a smooth scaling for fluid zoom animations
-        spr = entry["sprite"]
-        tw = max(1, int(spr.get_width() * current_zoom))
-        th = max(1, int(spr.get_height() * current_zoom))
-        final = pygame.transform.scale(spr, (tw, th))
-    else:
-
-        # Use the pre-rendered, scaled sprites for sharp, fast rendering
-        sprite_map = entry.get("scale") or {1.0: entry["sprite"]}
-        final = sprite_map.get(snapped_zoom) or sprite_map.get(1.0)
-        if final is None:
-            if DEBUG: print(f"[renderer] ❌ Missing sprite at {snapped_zoom:.2f} and 1.0 for '{terrain}'.")
-            return
+    # Failsafe if the snapped zoom level doesn't have a pre-scaled sprite.
+    if final is None:
+        if DEBUG: print(f"[renderer] ❌ Missing pre-scaled sprite for zoom level {current_zoom:.2f} for '{terrain}'.")
+        return
 
     # Blit the selected base terrain sprite
     screen.blit(final, (px + ox, py + oy))
 
     # 🌊 Blit Overlays (Coast, River, etc.)
     # Render coastline if the tile has a `has_shoreline` tag
-    if "has_shoreline" in drawable:
-        has_shoreline = drawable["has_shoreline"]
+
+# Next review: Tint shorelines based on edge-sharing terrain type.
+
+    if hasattr(drawable, 'has_shoreline'):
+        has_shoreline = drawable.has_shoreline
         coast_sprites = assets_state["tileset"].get("Coast", [])
         
         # Find all coast sprites with a matching bitmask
@@ -227,7 +229,7 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
 
             # Get the pre-scaled sprite for the current zoom
             coast_sprite_map = coast_entry.get("scale") or {1.0: coast_entry["sprite"]}
-            final_coast_sprite = coast_sprite_map.get(snapped_zoom) or coast_sprite_map.get(1.0)
+            final_coast_sprite = coast_sprite_map.get(current_zoom) or coast_sprite_map.get(1.0)
             
             # Blit the coastline overlay
             coast_off_x, coast_off_y = coast_entry["blit_offset"]
@@ -238,12 +240,12 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                 screen.blit(final_coast_sprite, (px + cox, py + coy))
 
     # Blit river, mouth, and spring overlays
-    if "river_data" in drawable and not drawable.get('suppress_river_overlay'):
-        river_bitmask_str = drawable["river_data"]["bitmask"]
+    if hasattr(drawable, 'river_data') and not getattr(drawable, 'suppress_river_overlay', False):
+        river_bitmask_str = drawable.river_data["bitmask"]
         
         # Determine which kind of river piece to draw based on its properties
-        is_source = drawable["river_data"].get("is_river_source", False)
-        is_mountain = drawable.get("is_mountain", False)
+        is_source = drawable.river_data.get("is_river_source", False)
+        is_mountain = getattr(drawable, 'is_mountain', False)
         connection_count = river_bitmask_str.count('1')
 
         # A tile is a "spring" (RiverEnd) only if it's a source and has just one connection.
@@ -252,9 +254,9 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
         else:
 
             # Otherwise, treat it as a regular river or a mouth.
-            is_ocean_endpoint = drawable.get("is_ocean", False)
-            is_lowland_endpoint = drawable.get("lowlands", False)
-            is_lake_endpoint = drawable.get("is_lake", False)
+            is_ocean_endpoint = getattr(drawable, 'is_ocean', False)
+            is_lowland_endpoint = getattr(drawable, 'lowlands', False)
+            is_lake_endpoint = getattr(drawable, 'is_lake', False)
             is_endpoint = is_ocean_endpoint or is_lowland_endpoint or is_lake_endpoint
             
             # If it's an endpoint, use the RiverMouth sprite, otherwise use a regular River sprite
@@ -281,7 +283,7 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                         h = int.from_bytes(hashlib.md5(seed).digest(), "big")
                         entry = matching_variants[h % len(matching_variants)]
                         sprite_map = entry.get("scale") or {1.0: entry["sprite"]}
-                        final_sprite = sprite_map.get(snapped_zoom) or sprite_map.get(1.0)
+                        final_sprite = sprite_map.get(current_zoom) or sprite_map.get(1.0)
                         off_x, off_y = entry["blit_offset"]
                         rox, roy = int(off_x * offset_scale), int(off_y * offset_scale)
                         if final_sprite:
@@ -299,12 +301,27 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                 h = int.from_bytes(hashlib.md5(seed).digest(), "big")
                 entry = matching_variants[h % len(matching_variants)]
                 sprite_map = entry.get("scale") or {1.0: entry["sprite"]}
-                final_sprite = sprite_map.get(snapped_zoom) or sprite_map.get(1.0)
+                final_sprite = sprite_map.get(current_zoom) or sprite_map.get(1.0)
                 off_x, off_y = entry["blit_offset"]
                 rox, roy = int(off_x * offset_scale), int(off_y * offset_scale)
                 if final_sprite:
                     screen.blit(final_sprite, (px + rox, py + roy))
+                                               
+    # Check if the tile object has the 'hovered' attribute and if it's True
+    if getattr(drawable, 'hovered', False):
 
+        # Get the dictionary of pre-scaled glow masks.
+        glow_masks = assets_state.get("glow_masks_by_zoom")
+        if glow_masks:
+
+            # Look up the correct mask using the current_zoom value (already calculated).
+            final_glow = glow_masks.get(current_zoom)
+            if final_glow:
+
+                # Blit the pre-scaled mask. This is extremely fast.
+                screen.blit(final_glow, (px + ox, py + oy), special_flags=pygame.BLEND_RGB_ADD)
+
+        
 def circle_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
 
     # Determine if the circle position is based on hex coordinates or explicit pixel coordinates
@@ -340,7 +357,8 @@ def circle_type_interpreter(screen, drawable, persistent_state, assets_state, va
 def text_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
 
     # Convert hex coordinates to pixel coordinates
-    q, r = drawable["coord"]
+    q = getattr(drawable, 'q', drawable.get('coord', [0, 0])[0])
+    r = getattr(drawable, 'r', drawable.get('coord', [0, 0])[1])
     px, py = hex_to_pixel(q, r, persistent_state, variable_state)
 
     # Adjust font size based on zoom so it stays readable
@@ -352,8 +370,8 @@ def text_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     font = get_font(font_size)
 
     # Prepare the text and color for rendering
-    text = str(drawable.get("text", ""))
-    color = drawable.get("color", (0, 0, 0))
+    text = str(getattr(drawable, 'text', drawable.get("text", "")))
+    color = getattr(drawable, 'color', drawable.get("color", (0, 0, 0)))
 
     # Render the text and blit it to the screen
     surf = font.render(text, True, color)

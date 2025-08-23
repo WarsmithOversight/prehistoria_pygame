@@ -203,22 +203,7 @@ def resolve_shoreline_bitmasks(tiledata, persistent_state):
                 nq, nr = get_neighbor_in_direction(q, r, direction, persistent_state)
                 neighbor = tiledata.get((nq, nr))
 
-                # ⚠️ Check for 'Blocked' Shorelines
-                # A shoreline is "blocked" if the adjacent land tile is a certain type, like a marsh.
-                is_blocked = False
-                if neighbor:
-
-                    # A shoreline is blocked only if the neighbor is a lowland,
-                    # but is NOT a central_desert or an adjacent_scrubland.
-                    is_blocked = (
-                        neighbor.get("lowlands") and 
-                        not neighbor.get("central_desert") and 
-                        not neighbor.get("adjacent_scrubland")
-                    )
-                
-                # ✍️ Build the Bitmask String
-                # If the neighbor is a non-blocked land tile, set the bit to '1'.
-                if neighbor and not neighbor.get("water_tile") and not is_blocked:
+                if neighbor and not neighbor.get("water_tile"):
                     bits.append("1")
                     is_shoreline = True
                 else:

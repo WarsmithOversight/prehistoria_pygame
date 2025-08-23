@@ -223,6 +223,35 @@ def hex_geometry(q, r, persistent_state, variable_state):
         "edges": edges, "neighbors": neighbors
     }
 
+def pixel_to_hex(mouse_pos, persistent_state, variable_state):
+    """
+    Finds the hex coordinate closest to the given mouse position by checking
+    against a pre-calculated grid of hex centers.
+    """
+    # Get camera state from the variable_state dictionary
+    camera_offset = variable_state.get("var_render_offset", (0, 0))
+    camera_zoom = variable_state.get("var_current_zoom", 1.0)
+
+    # Get the pre-calculated grid of pixel centers
+    pixel_grid = persistent_state.get("pers_hex_pixel_grid", {})
+    if not pixel_grid: return None
+
+    # Reverse the camera offset and zoom from the mouse position
+    unzoomed_x = (mouse_pos[0] - camera_offset[0]) / camera_zoom
+    unzoomed_y = (mouse_pos[1] - camera_offset[1]) / camera_zoom
+
+    closest_coord = None
+    min_dist_sq = float('inf')
+
+    # Find the hex center with the smallest squared distance to the mouse
+    for coord, center_pos in pixel_grid.items():
+        dist_sq = (unzoomed_x - center_pos[0])**2 + (unzoomed_y - center_pos[1])**2
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            closest_coord = coord
+            
+    return closest_coord
+
 # ──────────────────────────────────────────────
 # 🔍 Zoom Utilities
 # ──────────────────────────────────────────────

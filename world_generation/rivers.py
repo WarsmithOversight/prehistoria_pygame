@@ -228,11 +228,11 @@ def _process_river_endpoints(tiledata, river_paths, persistent_state):
             # Otherwise, create a new river data entry for the tile
             dest_tile['river_data'] = { "id": 0, "bitmask": format(inflow_bit, '06b') }
 
-        # Check if the destination is on land or in the ocean/coastal lowland
-        is_delta = dest_tile.get("is_ocean") or (dest_tile.get("lowlands") and dest_tile.get("is_coast"))
+        # Check if the destination a mouth
+        is_delta = dest_tile.get("is_ocean")
 
         # If the river terminates on land (not a delta), tag it as a lake
-        if not is_delta:
+        if not is_delta and not dest_tile.get("is_coast"):
             dest_tile["is_lake"] = True
             dest_tile["water_tile"] = True
 

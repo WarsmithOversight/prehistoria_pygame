@@ -2,7 +2,7 @@
 # Build a connected blob of N region tiles (radius R disks), then box, normalize, and oceanize.
 
 import random
-from shared_helpers import axial_distance, expand_region_seed, get_neighbors, a_star_pathfind
+from shared_helpers import axial_distance, expand_region_seed, get_neighbors, a_star_pathfind, hex_to_pixel
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -193,7 +193,7 @@ def initialize_tiledata(persistent_state, variable_state):
         raise ValueError("[tiledata] No region centers present. Run initialize_region_seeds first.")
 
     # minimum padding between playable area and void before boxing to rectangle
-    min_padding = 2
+    min_padding = 4
 
     # Create empty dicts to store data for the new regions.
     persistent_state["pers_region_sets"] = {}  # region_id -> set((q,r))
@@ -336,6 +336,9 @@ def initialize_tiledata(persistent_state, variable_state):
     # Save the list of impassable tiles for future ocean masking.
     variable_state["var_bounds"] = var_bounds
 
+    # Save all hex centers
+    persistent_state["pers_hex_pixel_grid"] = build_hex_pixel_grid(tiledata, persistent_state)
+
     # Calculate and print a summary of the generated map.
     total_tiles = width * height
     land_tiles  = sum(1 for t in tiledata.values() if t["passable"])
@@ -349,6 +352,27 @@ def initialize_tiledata(persistent_state, variable_state):
 
     # Return the generated tiledata dictionary.
     return tiledata
+
+def build_hex_pixel_grid(tiledata, persistent_state):
+    """
+    Creates a dictionary mapping hex coordinates to their un-zoomed,
+    un-offsetted world pixel centers for fast lookups.
+    """
+    print("[helpers] ✅ Building hex pixel grid for fast lookups...")
+    pixel_grid = {}
+    
+    # Create a temporary variable_state for the calculation, assuming no zoom or offset
+    temp_variable_state = {
+        "var_current_zoom": 1.0,
+        "var_render_offset": (0, 0)
+    }
+
+    for coord, tile in tiledata.items():
+        # We use hex_to_pixel from shared_helpers to get the center point
+        px, py = hex_to_pixel(tile["coord"][0], tile["coord"][1], persistent_state, temp_variable_state)
+        pixel_grid[coord] = (px, py)
+        
+    return pixel_grid
 
 # ──────────────────────────────────────────────────
 # 📏 Calculate World Topology
