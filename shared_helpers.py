@@ -176,6 +176,58 @@ def a_star_pathfind(tile_objects, start_coord, end_coord, persistent_state, play
     path.reverse()
     
     return path
+
+def find_reachable_tiles(start_coord, max_cost, tile_objects, player, persistent_state):
+    """
+    Finds all tiles reachable from a start_coord within a maximum movement cost.
+    Uses Dijkstra's algorithm to account for terrain costs.
+    """
+    # A dictionary to store the movement cost to reach each tile.
+    cost_so_far = {start_coord: 0}
+    
+    # A priority queue of tiles to visit, starting with the origin.
+    # The format is (cost, coordinate).
+    frontier = [(0, start_coord)]
+
+    while frontier:
+        # Get the tile with the lowest cost from the frontier.
+        current_cost, current_coord = heapq.heappop(frontier)
+
+        # If we've found a longer path to this tile, skip it.
+        if current_cost > cost_so_far[current_coord]:
+            continue
+
+        # Check all neighbors of the current tile.
+        for next_coord in get_neighbors(current_coord[0], current_coord[1], persistent_state):
+            tile = tile_objects.get(next_coord)
+            
+            if not tile or not tile.passable:
+                continue
+
+            # 🧠 Use the SAME logic as A* to determine the move_color/cost.
+            move_color = None
+            if "river_movement" in player.special_abilities and getattr(tile, 'river_data', None):
+                move_color = "good"
+            else:
+                move_color = player.terrain_movement_map.get(tile.terrain)
+            
+            # For now, we assume all valid moves cost 1 point.
+            new_cost = current_cost + 1
+
+            # First, check if we can afford to land on this tile at all.
+            if new_cost <= max_cost:
+                # If this is a cheaper path to this tile, record it.
+                if next_coord not in cost_so_far or new_cost < cost_so_far[next_coord]:
+                    cost_so_far[next_coord] = new_cost
+                    
+                    # 🧠 If the tile is "good", add it to the frontier to explore FROM it.
+                    # This allows us to path THROUGH "good" tiles.
+                    if move_color == "good":
+                        heapq.heappush(frontier, (new_cost, next_coord))
+
+    # The final set of reachable tiles are all the keys in our cost map.
+    return set(cost_so_far.keys())
+
 def get_neighbors(q, r, persistent_state):
     oddr = persistent_state["pers_neighbor_offsets"]["oddr"]
     parity = "odd" if (r & 1) else "even"
@@ -206,6 +258,49 @@ def get_direction_bit(start_coord, end_coord, persistent_state):
 def edge_neighbor(q, r, edge_name, persistent_state):
     dir_name = persistent_state["pers_edge_to_neighbor"][edge_name]
     return get_neighbor_in_direction(q, r, dir_name, persistent_state)
+
+def _get_neighbor_span(neighbor_coords, center_coord, persistent_state):
+    """
+    Calculates the "span" of a set of neighbors around a central hex.
+    The span is the length of the shortest continuous arc containing all neighbors.
+    A span of 3 means neighbors are on opposite sides (a line).
+    A span of 1 or 2 means neighbors are clustered on one side.
+    """
+    # A tile needs at least two neighbors to have a span.
+    if len(neighbor_coords) < 2:
+        return 0
+
+    # Get the canonical order of neighbor directions (e.g., NW, NE, E...).
+    neighbor_order = persistent_state.get("pers_bitmask_neighbor_order", [])
+    
+    # Convert neighbor coordinates to their index (0-5) in the canonical order.
+    indices = []
+    for direction in neighbor_order:
+        n_coord = get_neighbor_in_direction(center_coord[0], center_coord[1], direction, persistent_state)
+        if n_coord in neighbor_coords:
+            indices.append(neighbor_order.index(direction))
+    
+    if len(indices) < 2:
+        return 0
+
+    # Sort the indices to easily find the gaps between them.
+    indices.sort()
+    
+    # Calculate the gaps between consecutive neighbors in the sorted list.
+    gaps = []
+    for i in range(len(indices) - 1):
+        gaps.append(indices[i+1] - indices[i])
+    
+    # Calculate the "wrap-around" gap between the last and first neighbor.
+    wrap_around_gap = (indices[0] + 6) - indices[-1]
+    gaps.append(wrap_around_gap)
+    
+    # The span is the total circle (6) minus the largest empty space (max_gap).
+    max_gap = max(gaps)
+    span = 6 - max_gap
+
+    return span
+
 
 # ──────────────────────────────────────────────
 # 🗺️ Shape & Region Generation

@@ -43,6 +43,7 @@ def initialize_render_states(persistent_state):
         "coordinate":    lambda r: 2.0 + 0.3,
         "continent_spine": lambda r: 2.0 + 0.4,
         "region_border": lambda r: 2.0 + 0.5,
+        "debug_gap":     lambda r: 2.0 + 0.6,
     }
     
     print("[renderer] ✅ Render states and z-formulas initialized.")
@@ -509,6 +510,32 @@ def path_curve_interpreter(screen, drawable, persistent_state, assets_state, var
                 control_point = geom['corners'][pivot_corner_index]
         _draw_bezier_curve(screen, p_start, control_point, p_end, thickness, color)
      
+
+def debug_triangle_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """
+    Draws a polygon from a pre-defined list of world-space vertices and a color.
+    This "dumb" interpreter is responsible for applying camera transformations.
+    """
+    # 🎨 Get the pre-defined color and world-space vertices from the drawable
+    color = drawable.get("color", (255, 0, 0)) # Default to red if no color is specified
+    world_points = drawable.get("points", [])
+    
+    if not world_points:
+        return
+
+    # 🎥 Apply camera zoom and offset to each point
+    zoom = variable_state.get("var_current_zoom", 1.0)
+    offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
+    
+    screen_points = []
+    for wx, wy in world_points:
+        sx = (wx * zoom) + offset_x
+        sy = (wy * zoom) + offset_y
+        screen_points.append((sx, sy))
+        
+    # ✍️ Draw the final polygon on the screen
+    pygame.draw.polygon(screen, color, screen_points)
+
 # ──────────────────────────────────────────────────
 # ⌨️ Interpreter Dispatch
 # ──────────────────────────────────────────────────
@@ -520,6 +547,7 @@ TYPEMAP = {
     "edge_line": edge_line_type_interpreter,
     "player_token": player_token_interpreter,
     "path_curve": path_curve_interpreter,
+    "debug_triangle": debug_triangle_interpreter,
 }
 
 

@@ -1,7 +1,7 @@
 
 import random, math
 from collections import Counter
-from shared_helpers import axial_distance, get_neighbors, get_neighbor_in_direction, get_tiles_bordering_tag
+from shared_helpers import axial_distance, get_neighbors, get_neighbor_in_direction, get_tiles_bordering_tag, hex_geometry, _get_neighbor_span
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
 # ──────────────────────────────────────────────────
@@ -13,6 +13,8 @@ TERRAIN_GENERATION_MODE = 'REGIONAL' # Can be 'GLOBAL' or 'REGIONAL'
 # These variables control the size and distribution of terrain features.
 MOUNTAIN_FACTOR = 20                    # The percentage of all land tiles that will be tagged as mountains.
 mountain_range_RANGE = 1                     # The hex distance from a mountain for a tile to be considered 'mountain_range'.
+MOUNTAIN_CLEANUP_FACTOR = 10  # The percentage of total mountains to consider for relocation.
+
 
 # Set to a number to override, or None to calculate dynamically.
 # These "None" fallbacks are based on sqrt(region_count) to scale with the map's "radius".
@@ -298,9 +300,151 @@ def add_distance_from_mountain_to_tiledata(tiledata):
         # ✅ Report successful completion.
         print(f"[mountains] ✅  Distance from mountain assigned to {len(tiledata)} tiles.")
 
-# ────────────────────────────────────────────────────────
-# Assign Region Biomes for standard play
-# ────────────────────────────────────────────────────────
+def _update_buckets_locally(coords_to_check, tiledata, persistent_state, mountains_set, bad_bucket, good_bucket):
+    """
+    Re-evaluates a small set of tiles and updates the good/bad buckets.
+    This is the core of the efficient "local recalculation".
+    """
+    for coord in coords_to_check:
+        # Check if this tile is currently a mountain.
+        is_mountain = coord in mountains_set
+
+        # Get its mountain neighbors from the dynamic set.
+        mountain_neighbors = [nc for nc in get_neighbors(coord[0], coord[1], persistent_state) if nc in mountains_set]
+
+        # Update CLUSTER status (can only be a mountain).
+        if is_mountain:
+            span = _get_neighbor_span(mountain_neighbors, coord, persistent_state)
+            if span <= 2:
+                bad_bucket.add(coord) # It's a cluster.
+            elif coord in bad_bucket:
+                bad_bucket.remove(coord) # It's no longer a cluster.
+        
+        # Update GAP status (cannot be a mountain).
+        else:
+            dist = tiledata[coord].get('dist_from_ocean')
+            if dist is not None and dist > 3 and len(mountain_neighbors) >= 2:
+                span = _get_neighbor_span(mountain_neighbors, coord, persistent_state)
+                if span >= 3:
+                    good_bucket.add(coord) # It's a gap.
+                elif coord in good_bucket:
+                    good_bucket.remove(coord) # It's no longer a gap.
+            elif coord in good_bucket:
+                 good_bucket.remove(coord) # No longer meets basic gap criteria.
+
+
+def _find_mountain_gaps(tiledata, persistent_state, mountains_set):
+    """Finds all valid gap locations based on a dynamic set of mountains."""
+    gap_coords = set()
+    # Iterate through all tiles to see if they qualify as a gap.
+    for coord, tile in tiledata.items():
+        # A gap cannot be a mountain itself.
+        if coord in mountains_set: continue
+        
+        # A gap cannot be on the immediate coastline.
+        dist_from_ocean = tile.get('dist_from_ocean')
+        if dist_from_ocean is None or dist_from_ocean <= 3: continue
+
+        # Find all neighbors that are currently mountains.
+        mountain_neighbors = [nc for nc in get_neighbors(coord[0], coord[1], persistent_state) if nc in mountains_set]
+        
+        # A gap must have at least two mountain neighbors.
+        if len(mountain_neighbors) < 2: continue
+
+        # A true gap has neighbors on opposite sides (a wide span).
+        span = _get_neighbor_span(mountain_neighbors, coord, persistent_state)
+        if span >= 3:
+            gap_coords.add(coord)
+            
+    return gap_coords
+
+def _find_clustered_mountains(persistent_state, mountains_set):
+    """Finds all clustered mountains based on a dynamic set of mountains."""
+    cluster_coords = set()
+    # Iterate through only the current set of mountains.
+    for coord in mountains_set:
+        # Find all neighbors that are also mountains.
+        mountain_neighbors = [nc for nc in get_neighbors(coord[0], coord[1], persistent_state) if nc in mountains_set]
+        
+        # A mountain needs at least two neighbors to be part of a cluster or line.
+        if len(mountain_neighbors) < 2: continue
+        
+        # A cluster mountain has neighbors bunched together (a small span).
+        span = _get_neighbor_span(mountain_neighbors, coord, persistent_state)
+        if span <= 2:
+            cluster_coords.add(coord)
+            
+    return cluster_coords
+
+def sculpt_mountain_ranges(tiledata, persistent_state):
+    """
+    The main orchestrator for the mountain sculpting process.
+    This function should be called AFTER the initial random mountains have been placed.
+    """    
+    # 🏞️ Initial Scan
+    # Create the initial "virtual" set of all mountain coordinates from the tiledata.
+    mountains_set = {c for c, t in tiledata.items() if t.get('is_mountain')}
+    
+    # Run the initial scan to populate our buckets with all good and bad coordinates.
+    bad_mountain_bucket = _find_clustered_mountains(persistent_state, mountains_set)
+    good_gap_bucket = _find_mountain_gaps(tiledata, persistent_state, mountains_set)
+
+    # Calculate the maximum number of mountains to relocate.
+    num_to_relocate = int(len(mountains_set) * (MOUNTAIN_CLEANUP_FACTOR / 100.0))
+
+    print(f"[mountains]    Initial state: {len(bad_mountain_bucket)} clusters, {len(good_gap_bucket)} gaps. Relocating up to {num_to_relocate} mountains.")
+
+    # 🔄 The Cleanup Loop
+    # These lists will track the final changes to be made to the tiledata.
+    add_mountain_tags = []
+    remove_mountain_tags = []
+
+    for _ in range(num_to_relocate):
+        # Stop early if we run out of clusters to fix or gaps to fill.
+        if not bad_mountain_bucket or not good_gap_bucket:
+            print("[mountains] ⚠️ Halting early: ran out of clusters to remove or gaps to fill.")
+            break
+
+        # --- Step 1: Remove a Bad Mountain ---
+        # Pick a random clustered mountain to remove.
+        coord_to_remove = random.choice(list(bad_mountain_bucket))
+        
+        # Record the removal and update our virtual mountain set.
+        remove_mountain_tags.append(coord_to_remove)
+        mountains_set.remove(coord_to_remove)
+        bad_mountain_bucket.remove(coord_to_remove)
+
+        # Locally re-evaluate the area around the removed mountain.
+        coords_to_recheck_remove = get_neighbors(coord_to_remove[0], coord_to_remove[1], persistent_state) + [coord_to_remove]
+        _update_buckets_locally(coords_to_recheck_remove, tiledata, persistent_state, mountains_set, bad_mountain_bucket, good_gap_bucket)
+
+        # --- Step 2: Place a Good Mountain ---
+        # Pick a random gap to fill.
+        coord_to_add = random.choice(list(good_gap_bucket))
+        
+        # Record the addition and update our virtual mountain set.
+        add_mountain_tags.append(coord_to_add)
+        mountains_set.add(coord_to_add)
+        good_gap_bucket.remove(coord_to_add)
+
+        # Locally re-evaluate the area around the new mountain.
+        coords_to_recheck_add = get_neighbors(coord_to_add[0], coord_to_add[1], persistent_state) + [coord_to_add]
+        _update_buckets_locally(coords_to_recheck_add, tiledata, persistent_state, mountains_set, bad_mountain_bucket, good_gap_bucket)
+        
+    # ✍️ Final Application
+    # Apply all the calculated changes to the actual tiledata dictionary.
+    for coord in remove_mountain_tags:
+        if coord in tiledata:
+            tiledata[coord]['is_mountain'] = False
+            tiledata[coord]['passable'] = True
+    
+    for coord in add_mountain_tags:
+        if coord in tiledata:
+            tiledata[coord]['is_mountain'] = True
+            tiledata[coord]['passable'] = False
+
+    print(f"[mountains] ✅ {len(add_mountain_tags)} Bad mountains moved to gaps.")
+
 
 # ────────────────────────────────────────────────────────
 # 🌾 Tag Lowlands, mountain_range, Central Desert

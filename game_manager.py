@@ -1,7 +1,7 @@
 # game_manager.py
 # This class orchestrates the game's state, including turns and active players.
 
-from shared_helpers import get_tiles_in_range, a_star_pathfind, hex_to_pixel
+from shared_helpers import get_tiles_in_range, a_star_pathfind, hex_to_pixel, find_reachable_tiles
 
 class GameManager:
     """Manages the overall game state, turn progression, and active player."""
@@ -73,6 +73,24 @@ class GameManager:
             self.persistent_state, self.variable_state
         )
 
+        # 🧠 Determine and apply any start-of-turn movement modifiers
+        player = self.active_player
+        start_coord = (player.q, player.r)
+        start_tile = self.tile_objects.get(start_coord)
+        player.turn_movement_modifier = 0 # Always reset the modifier first
+
+        if start_tile:
+            # Check the move_color of the tile the player is standing on
+            move_color = player.terrain_movement_map.get(start_tile.terrain)
+            
+            # Apply the penalty if the tile is a "dead stop"
+            if move_color in ["medium", "bad"]:
+                player.turn_movement_modifier = -1
+                print(f"[GameManager] ⚠️ Player {player.player_id} starts on difficult terrain. Movement reduced by 1 for this turn.")
+
+        # Refresh the new player's movement points, applying the modifier
+        player.remaining_movement = player.movement_points + player.turn_movement_modifier
+
         # Pre-calculate the movement range for the new active player
         self._calculate_active_player_movement()
 
@@ -87,7 +105,10 @@ class GameManager:
         
         # Check if the click is on a valid move destination
         clicked_tile = self.tile_objects.get(coord)
-        if clicked_tile and clicked_tile.move_color and self.selected_player is self.active_player:
+        if (clicked_tile and 
+                clicked_tile.move_color and 
+                self.selected_player is self.active_player and
+                coord != (self.active_player.q, self.active_player.r)): # 🧠 Prevent moving to the same tile
             self.move_player_to(coord)
             return
 
@@ -123,29 +144,49 @@ class GameManager:
         player = self.active_player
         start_coord = (player.q, player.r)
 
+        # Hide the pathfinding overlay
+        self.update_path_overlay(None)
+
         path_coords = a_star_pathfind(
             self.tile_objects, start_coord, destination_coord, self.persistent_state, player
         )
 
         if not path_coords:
+            # Path was invalid, so no move will happen. Do nothing.
             return
 
         self.is_player_moving = True
-        
+
         def on_move_complete():
+            # 🧠 Get the destination tile to check its properties
+            destination_tile = self.tile_objects.get(destination_coord)
+
+            # Check if the destination is a "dead stop" tile
+            if destination_tile and destination_tile.move_color in ["medium", "bad"]:
+                # Landing on a high-cost tile consumes all remaining movement
+                player.remaining_movement = 0
+            else:
+                # Otherwise, just subtract the path length
+                # We subtract 1 because the path includes the starting tile
+                path_cost = len(path_coords) - 1
+                player.remaining_movement -= path_cost
+
             # Update the player object's official state
             player.q, player.r = destination_coord
-            
-            # Snap the drawable's final q,r back to integers for perfect alignment
+
+            # Clean up the animation key from the drawable
             token = self.notebook.get(player.token_key)
             if token and 'pixel_pos' in token:
                 del token['pixel_pos']
 
             self.is_player_moving = False
-                            
+
+            # Refresh the overlay: hide the old one, then calc and show the new one.
+            self._toggle_movement_overlay(False)
+            self._calculate_active_player_movement()
+            self._toggle_movement_overlay(True)
         # Get the player's drawable "buddy" from the notebook
         token_to_animate = self.notebook.get(player.token_key)
-        z_formula = self.persistent_state["pers_z_formulas"]["player_token"]   
 
         # Call the new tweener with the hex path
         self.tween_manager.add_tween(
@@ -156,7 +197,7 @@ class GameManager:
             path=path_coords,
             speed_hps=3.0
         )
-        
+                
     def _calculate_active_player_movement(self):
         """Calculates the move range and tags tiles with their movement color."""
         # Clear the color tags from the previous turn's range
@@ -168,11 +209,12 @@ class GameManager:
         player = self.active_player
 
         # Get all tiles within the player's movement point radius
-        tiles_in_range = get_tiles_in_range(
-            (player.q, player.r),
-            player.movement_points,
-            self.tile_objects,
-            self.persistent_state
+        tiles_in_range = find_reachable_tiles(
+            start_coord=(player.q, player.r),
+            max_cost=player.remaining_movement,
+            tile_objects=self.tile_objects,
+            player=player,
+            persistent_state=self.persistent_state
         )
 
         # Store the new range and tag the tiles within it with the correct color
@@ -197,11 +239,14 @@ class GameManager:
                 del self.notebook[key]
         self.path_keys.clear()
 
+        # 🧠 Do not draw a path if a player is already moving.
+        if self.is_player_moving:
+            return
+
         # Ensure the active player is selected and the hovered tile is valid
         is_overlay_visible = self.selected_player and self.selected_player is self.active_player
         if not is_overlay_visible or not hovered_coord:
             return
-
         # Check if the hovered tile is a valid move target (it has a move_color)
         hovered_tile = self.tile_objects.get(hovered_coord)
         if not hovered_tile or not hovered_tile.move_color:

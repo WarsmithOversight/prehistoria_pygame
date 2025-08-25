@@ -170,10 +170,6 @@ class TravelTween(Tween):
         # P1 (Control Point) - makes the path curve or straighten
         self.p1 = geom['center']
 
-        # For a simple A->B path, make it a straight line by moving the control point
-        if path_length == 2:
-            self.p1 = self.p2
-
         # Let the updater handle z-value changes
         if next_coord:
             self.updater.on_segment_start(self.target_dict, current_coord, next_coord)

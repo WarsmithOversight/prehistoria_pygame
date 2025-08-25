@@ -22,6 +22,7 @@ from world_generation.generate_terrain import (
     tag_lowlands, tag_mountain_range,
     tag_central_desert, add_windward_and_leeward_tags,
     fill_in_terrain_from_tags,tag_adjacent_scrublands,
+    sculpt_mountain_ranges
 )
 from renderer import (
     render_giant_z_pot, initialize_render_states,
@@ -110,6 +111,7 @@ assign_biomes_to_regions(tiledata, persistent_state)
 # --- 🔭 Tag More Detailed Features ---
 tag_lowlands(tiledata, persistent_state)
 tag_mountain_range(tiledata)
+sculpt_mountain_ranges(tiledata, persistent_state)
 tag_central_desert(tiledata, persistent_state)
 tag_adjacent_scrublands(tiledata, persistent_state)
 add_windward_and_leeward_tags(tiledata, persistent_state)

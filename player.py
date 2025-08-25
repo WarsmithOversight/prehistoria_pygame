@@ -24,7 +24,9 @@ class Player:
        # Load the specific movement rules for this species
         self.terrain_movement_map = self.species_data.get("terrain_movement_map", {"default": "bad"})
         self.special_abilities = self.species_data.get("special_abilities", [])        
-  
+        self.remaining_movement = self.movement_points
+        self.turn_movement_modifier = 0
+        
         # Find a valid starting location
         start_coord = self._find_start_location(tile_objects)
         if not start_coord:
