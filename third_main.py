@@ -8,6 +8,7 @@ from camera_controller import CameraController
 from player import Player
 from game_manager import GameManager
 from event_bus import EventBus
+from tween_manager import TweenManager
 
 from world_generation.initialize_tiledata import (
     initialize_tiledata, initialize_region_seeds,
@@ -29,7 +30,7 @@ from load_assets import (
     load_tileset_assets, load_coast_assets,
     load_river_assets, load_river_mouth_assets,
     load_river_end_assets, initialize_asset_states,
-    create_glow_mask, load_player_assets
+    create_glow_mask, load_player_assets, create_tinted_glow_masks,
 )
 from world_generation.tile import create_tile_objects_from_data
 from shared_helpers import initialize_shared_helper_states
@@ -132,6 +133,7 @@ load_river_mouth_assets(assets_state, persistent_state)
 load_river_end_assets(assets_state, persistent_state)
 load_player_assets(assets_state, persistent_state)
 create_glow_mask(persistent_state, assets_state)
+create_tinted_glow_masks(persistent_state, assets_state)
 
 # --- 📷 Exports ---
 if GENERATE_EXPORTS:
@@ -186,7 +188,8 @@ camera_controller = CameraController(persistent_state, variable_state)
 map_interactor = MapInteractor()
 event_bus = EventBus()
 
-game_manager = GameManager(players, camera_controller, tile_objects, event_bus, persistent_state, variable_state)
+tween_manager = TweenManager(persistent_state, variable_state)
+game_manager = GameManager(players, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state)
 
 # ──────────────────────────────────────────────────
 # ⏰ Main Loop
@@ -195,6 +198,7 @@ running = True
 print(f"[main] ✅ Main game loop initiated.")
 while running:
     # Get all user events once at the start of the frame.
+    dt = clock.tick(60) / 1000.0 # Delta time in seconds
     events = pygame.event.get()
     mouse_pos = pygame.mouse.get_pos()
 
@@ -210,11 +214,18 @@ while running:
     # ──────────────────────────────────────────────────
     # ⚙️ Update State
     # ──────────────────────────────────────────────────
+
+    # Update all active animations
+    tween_manager.update(dt)
+
     # Handle direct camera controls like keyboard panning and scroll wheel zooming.
     camera_controller.handle_events(events, persistent_state)
     
-    # The interactor now returns both the pan delta and any clicked coordinate
-    pan_delta, clicked_coord = map_interactor.handle_events(events, mouse_pos, tile_objects, persistent_state, variable_state)
+    # The interactor now returns the pan delta, clicked coord, and hovered coord
+    pan_delta, clicked_coord, hovered_coord = map_interactor.handle_events(events, mouse_pos, tile_objects, persistent_state, variable_state)
+
+    # Update the path overlay based on the currently hovered tile
+    game_manager.update_path_overlay(hovered_coord)
 
     # If a tile was clicked, pass its coordinate to the GameManager to handle
     if clicked_coord:
@@ -227,14 +238,10 @@ while running:
     # Finalize the camera's state for this frame
     camera_controller.update(persistent_state, variable_state)
         
-    # ──────────────────────────────────────────────────
     # 🎨 Render
-    # ──────────────────────────────────────────────────
-    # The renderer takes all the prepared data and draws the final scene.
     render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state)
 
     # Update the full display and cap the framerate.
     pygame.display.flip()
-    clock.tick(60)
 
 pygame.quit()

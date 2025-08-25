@@ -19,11 +19,11 @@ def initialize_shared_helper_states(persistent_state):
     persistent_state["pers_hex_anatomy"] = {
         "corners": {
             0: {"name": "N",  "vector": (0.0, -1.0)},
-            1: {"name": "NE", "vector": (0.8660254, -0.5)},
-            2: {"name": "SE", "vector": (0.8660254, 0.5)},
+            1: {"name": "NE", "vector": (1.0, -0.5)},
+            2: {"name": "SE", "vector": (1.0, 0.5)},
             3: {"name": "S",  "vector": (0.0, 1.0)},
-            4: {"name": "SW", "vector": (-0.8660254, 0.5)},
-            5: {"name": "NW", "vector": (-0.8660254, -0.5)}
+            4: {"name": "SW", "vector": (-1.0, 0.5)},
+            5: {"name": "NW", "vector": (-1.0, -0.5)}
         },
         "edges": {
             0: {"name": "NW", "corner_pair": (5, 0)},
@@ -99,35 +99,83 @@ def axial_distance(aq, ar, bq, br):
 # 🧭 Grid Topology & Neighbors
 # ──────────────────────────────────────────────
 
-def a_star_pathfind(tiledata, start_coord, end_coord, persistent_state, min_dist_from_ocean=0):
+def a_star_pathfind(tile_objects, start_coord, end_coord, persistent_state, player):
+    # A priority queue to hold nodes to visit, starting with the origin
     frontier = [(0, start_coord)]
+    
+    # A dictionary to reconstruct the path once the end is found
     came_from = {start_coord: None}
+    
+    # A dictionary to store the cost of reaching each node
     cost_so_far = {start_coord: 0}
+    
+    # Process nodes until the frontier is empty
     while frontier:
+        # Get the node with the lowest priority (cost + heuristic)
         _, current_coord = heapq.heappop(frontier)
-        if current_coord == end_coord: break
+        
+        # Exit early if the destination is reached
+        if current_coord == end_coord:
+            break
+        
+        # Check all neighbors of the current node
         for next_coord in get_neighbors(current_coord[0], current_coord[1], persistent_state):
-            tile = tiledata.get(next_coord)
-            if not tile or not tile.get("passable"): continue
-            if tile.get("dist_from_ocean", 0) < min_dist_from_ocean: continue
+            # Get the neighbor's tile object
+            tile = tile_objects.get(next_coord)
+            
+            # Skip this neighbor if it's invalid or impassable
+            if not tile or not tile.passable:
+                continue
+
+            # 🛑 "Dead Stop" Logic 🛑
+            # Check the move color for the neighbor tile, accounting for special abilities.
+            move_color = None
+            if "river_movement" in player.special_abilities and getattr(tile, 'river_data', None):
+                move_color = "good"
+            else:
+                move_color = player.terrain_movement_map.get(tile.terrain)
+
+            # If the tile is a costly tile, do not consider it as part of a path,
+            # unless it is the final destination.
+            if move_color in ["medium", "bad"] and next_coord != end_coord:
+                continue # Skip this neighbor entirely
+                
+            # The cost to move to a neighbor is always 1 in this simple model
             new_cost = cost_so_far[current_coord] + 1
+
+            # If the cost to reach this neighbor exceeds the player's movement, skip it
+            if new_cost > player.movement_points:
+                continue
+            
+            # If we haven't seen this node before, or found a cheaper path, update it
             if next_coord not in cost_so_far or new_cost < cost_so_far[next_coord]:
                 cost_so_far[next_coord] = new_cost
+                
+                # Calculate the priority: total cost so far + estimated distance to the end
                 q1, r1 = next_coord
                 q2, r2 = end_coord
                 priority = new_cost + axial_distance(q1, r1, q2, r2)
+                
+                # Add the neighbor to the frontier with its new priority
                 heapq.heappush(frontier, (priority, next_coord))
                 came_from[next_coord] = current_coord
+                
+    # Reconstruct the path by backtracking from the end node
     path = []
     current = end_coord
     while current != start_coord:
         path.append(current)
         current = came_from.get(current)
-        if current is None: return []
+        
+        # If the path breaks, it means the end was unreachable
+        if current is None:
+            return [] # Return an empty path
+            
+    # Add the starting node and reverse the path to the correct order
     path.append(start_coord)
     path.reverse()
+    
     return path
-
 def get_neighbors(q, r, persistent_state):
     oddr = persistent_state["pers_neighbor_offsets"]["oddr"]
     parity = "odd" if (r & 1) else "even"
@@ -189,14 +237,22 @@ def expand_region_seed(center_q, center_r, R):
 # 🎨 Pixel & Render Geometry
 # ──────────────────────────────────────────────
 
-def hex_to_pixel(q: int, r: int, persistent_state, variable_state):
+def hex_to_pixel(q, r, persistent_state, variable_state):
+    # Your original variable names and structure
     tile_hex_w = persistent_state["pers_tile_hex_w"]
     tile_hex_h = persistent_state["pers_tile_hex_h"]
     scale = variable_state.get("var_current_zoom", 1.0)
     horiz_spacing = tile_hex_w * scale
     vert_spacing = tile_hex_h * 0.75 * scale
-    x = q * horiz_spacing + (horiz_spacing / 2 if r & 1 else 0)
+
+    # The one required logic change: use the integer part of 'r' for the odd/even check.
+    is_odd_row = int(r) % 2 != 0
+    row_indent = horiz_spacing / 2 if is_odd_row else 0
+
+    x = q * horiz_spacing + row_indent
     y = r * vert_spacing
+    
+    # Your original return structure
     offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
     return (x + offset_x, y + offset_y)
 
@@ -251,6 +307,15 @@ def pixel_to_hex(mouse_pos, persistent_state, variable_state):
             closest_coord = coord
             
     return closest_coord
+
+def get_point_on_bezier_curve(p0, p1, p2, t):
+    """
+    Calculates a point on a quadratic Bezier curve for a given progress 't' (0.0 to 1.0).
+    p0: Start point, p1: Control point, p2: End point.
+    """
+    x = (1 - t)**2 * p0[0] + 2 * (1 - t) * t * p1[0] + t**2 * p2[0]
+    y = (1 - t)**2 * p0[1] + 2 * (1 - t) * t * p1[1] + t**2 * p2[1]
+    return (x, y)
 
 # ──────────────────────────────────────────────
 # 🔍 Zoom Utilities
@@ -324,10 +389,6 @@ def get_tiles_within_range_of_terrain(tiledata, terrain_list, distance, persiste
                     frontier.append(((nq, nr), d + 1))
     return result
 
-# In shared_helpers.py
-
-import math # Make sure math is imported
-
 def get_tagged_points_with_angle_dist(tiledata, center_coord, tag_key, tag_values):
     """
     Finds all tiles with a specific tag and calculates their angle and distance
@@ -343,9 +404,7 @@ def get_tagged_points_with_angle_dist(tiledata, center_coord, tag_key, tag_value
     Returns:
         list: A list of dictionaries, each with 'angle' and 'dist'.
     """
-    # ──────────────────────────────────────────────────
     # ⚙️ Setup
-    # ──────────────────────────────────────────────────
     points = []
     center_q, center_r = center_coord
 
@@ -353,9 +412,7 @@ def get_tagged_points_with_angle_dist(tiledata, center_coord, tag_key, tag_value
     if not isinstance(tag_values, list):
         tag_values = [tag_values]
 
-    # ──────────────────────────────────────────────────
     # 📐 Find Points and Calculate Geometry
-    # ──────────────────────────────────────────────────
     for coord, data in tiledata.items():
         # Check if the tile's tag value is in our list of desired values
         if data.get(tag_key) in tag_values:
@@ -372,3 +429,38 @@ def get_tagged_points_with_angle_dist(tiledata, center_coord, tag_key, tag_value
 
     print(f"[geometry] ✅ Found {len(points)} points with tag '{tag_key}' and calculated their geometry.")
     return points
+
+def get_tiles_in_range(start_coord, distance, tile_objects, persistent_state):
+    """
+    Finds all tile coordinates within a given hex distance from a starting point.
+
+    Args:
+        start_coord (tuple): The (q, r) coordinate to start the search from.
+        distance (int): The maximum hex distance (radius) to search.
+        tile_objects (dict): The main dictionary of all Tile objects.
+        persistent_state (dict): The dictionary with shared helper data.
+
+    Returns:
+        set: A set of (q, r) coordinates for all tiles within the range.
+    """
+    # Use a set to automatically handle visited tiles and prevent duplicates
+    visited = {start_coord}
+    
+    # The frontier holds tiles to visit in the current "ring" of the search
+    frontier = {start_coord}
+
+    # Expand outward one ring at a time, up to the maximum distance
+    for i in range(distance):
+        next_frontier = set()
+        for coord in frontier:
+            # Get all neighbors of the current tile
+            q, r = coord
+            for neighbor_coord in get_neighbors(q, r, persistent_state):
+                # Add the neighbor if it's a valid, unvisited tile
+                if neighbor_coord in tile_objects and neighbor_coord not in visited:
+                    visited.add(neighbor_coord)
+                    next_frontier.add(neighbor_coord)
+        # The newly found neighbors become the next ring to expand from
+        frontier = next_frontier
+        
+    return visited

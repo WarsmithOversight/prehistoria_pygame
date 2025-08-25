@@ -531,88 +531,89 @@ def calculate_monsoon_bands(tiledata, persistent_state):
         print(f"[elevation] ✅ Monsoon bands (q-distance) calculated.")
 
 def tag_continent_spine(tiledata, persistent_state):
-    """
-    Finds the hub-and-spoke spine and tags each tile on it with rich
-    data: its spoke ID, its distance along the spoke, and the spoke's total length.
-    """
-    # ──────────────────────────────────────────────────
-    # ⚙️ Setup & Dependencies
-    # ──────────────────────────────────────────────────
+    return
+#     """
+#     Finds the hub-and-spoke spine and tags each tile on it with rich
+#     data: its spoke ID, its distance along the spoke, and the spoke's total length.
+#     """
+#     # ──────────────────────────────────────────────────
+#     # ⚙️ Setup & Dependencies
+#     # ──────────────────────────────────────────────────
 
-    # 🧠 Calculate the minimum distance for a path to be considered "inland".
-    # This is based on the region radius, ensuring spokes stay in the continent's center.
-    region_radius = persistent_state.get("pers_region_radius", 3)
-    min_inland_distance = region_radius + 1
+#     # 🧠 Calculate the minimum distance for a path to be considered "inland".
+#     # This is based on the region radius, ensuring spokes stay in the continent's center.
+#     region_radius = persistent_state.get("pers_region_radius", 3)
+#     min_inland_distance = region_radius + 1
 
-    # Get the calculated center of the continent to use as the spine's hub.
-    spine_hub_coord = persistent_state.get("pers_map_center")
+#     # Get the calculated center of the continent to use as the spine's hub.
+#     spine_hub_coord = persistent_state.get("pers_map_center")
 
-    # Check if the calculated center exists and is a passable land tile.
-    if not spine_hub_coord:
-        if DEBUG: print("[tiledata] ⚠️ Map center not found; cannot create spine.")
-        return
+#     # Check if the calculated center exists and is a passable land tile.
+#     if not spine_hub_coord:
+#         if DEBUG: print("[tiledata] ⚠️ Map center not found; cannot create spine.")
+#         return
         
-    hub_tile = tiledata.get(spine_hub_coord)
-    if not hub_tile or not hub_tile.get("passable"):
+#     hub_tile = tiledata.get(spine_hub_coord)
+#     if not hub_tile or not hub_tile.get("passable"):
 
-        # If not, find the closest land tile to serve as an alternate hub.
-        if DEBUG: print(f"[tiledata] ⚠️ Center {spine_hub_coord} is not on land. Finding nearest valid tile.")
-        min_dist = float('inf')
-        valid_hub = None
+#         # If not, find the closest land tile to serve as an alternate hub.
+#         if DEBUG: print(f"[tiledata] ⚠️ Center {spine_hub_coord} is not on land. Finding nearest valid tile.")
+#         min_dist = float('inf')
+#         valid_hub = None
         
-        # Use the pre-calculated land tile lookup for efficiency.
-        for coord in persistent_state.get("pers_quick_tile_lookup", []):
-            dist = axial_distance(spine_hub_coord[0], spine_hub_coord[1], coord[0], coord[1])
-            if dist < min_dist:
-                min_dist = dist
-                valid_hub = coord
+#         # Use the pre-calculated land tile lookup for efficiency.
+#         for coord in persistent_state.get("pers_quick_tile_lookup", []):
+#             dist = axial_distance(spine_hub_coord[0], spine_hub_coord[1], coord[0], coord[1])
+#             if dist < min_dist:
+#                 min_dist = dist
+#                 valid_hub = coord
         
-        spine_hub_coord = valid_hub
-        if DEBUG and spine_hub_coord: print(f"[tiledata]    -> Using {spine_hub_coord} as the spine hub instead.")
+#         spine_hub_coord = valid_hub
+#         if DEBUG and spine_hub_coord: print(f"[tiledata]    -> Using {spine_hub_coord} as the spine hub instead.")
     
-    if not spine_hub_coord:
-        if DEBUG: print("[tiledata] ❌ Could not find any valid land tile for spine hub.")
-        return
+#     if not spine_hub_coord:
+#         if DEBUG: print("[tiledata] ❌ Could not find any valid land tile for spine hub.")
+#         return
     
-    centers = persistent_state.get("pers_region_centers", [])
-    spoke_destinations = []
+#     centers = persistent_state.get("pers_region_centers", [])
+#     spoke_destinations = []
 
-    for region_data in centers:
-        # Extract the coordinate tuple from the dictionary first
-        center_coord = (region_data["q"], region_data["r"])
-        center_tile = tiledata.get(center_coord)
+#     for region_data in centers:
+#         # Extract the coordinate tuple from the dictionary first
+#         center_coord = (region_data["q"], region_data["r"])
+#         center_tile = tiledata.get(center_coord)
 
-        # A destination must be near the coast to ensure spokes radiate outwards.
-        if center_tile and center_tile.get("dist_from_ocean", 0) <= min_inland_distance:
-            if center_coord != spine_hub_coord:
-                spoke_destinations.append(center_coord) # Now this correctly appends the tuple
+#         # A destination must be near the coast to ensure spokes radiate outwards.
+#         if center_tile and center_tile.get("dist_from_ocean", 0) <= min_inland_distance:
+#             if center_coord != spine_hub_coord:
+#                 spoke_destinations.append(center_coord) # Now this correctly appends the tuple
 
-    # Tag the hub tile itself as the origin point of all spokes.
-    if spine_hub_coord in tiledata:
-        tiledata[spine_hub_coord]["spine_data"] = {
-            "spoke_id": 0, "dist_on_spoke": 0, "spoke_max_dist": 0
-        }
+#     # Tag the hub tile itself as the origin point of all spokes.
+#     if spine_hub_coord in tiledata:
+#         tiledata[spine_hub_coord]["spine_data"] = {
+#             "spoke_id": 0, "dist_on_spoke": 0, "spoke_max_dist": 0
+#         }
 
-    # Pathfind from the hub to each destination.
-    for i, dest_coord in enumerate(spoke_destinations, start=1):
+#     # Pathfind from the hub to each destination.
+#     for i, dest_coord in enumerate(spoke_destinations, start=1):
         
-        # Generate the path, ensuring it stays inland.
-        path = a_star_pathfind(
-            tiledata, spine_hub_coord, dest_coord, persistent_state,
-            min_dist_from_ocean=min_inland_distance
-        )
+#         # Generate the path, ensuring it stays inland.
+#         path = a_star_pathfind(
+#             tiledata, spine_hub_coord, dest_coord, persistent_state,
+#             min_dist_from_ocean=min_inland_distance
+#         )
 
-        if not path: continue
+#         if not path: continue
 
-        # Tag each tile on the path with rich data about the spoke.
-        path_length = len(path) - 1
-        for dist_on_spoke, coord in enumerate(path):
-            if coord in tiledata:
-                tiledata[coord]["spine_data"] = {
-                    "spoke_id": i,
-                    "dist_on_spoke": dist_on_spoke,
-                    "spoke_max_dist": path_length
-                }
+#         # Tag each tile on the path with rich data about the spoke.
+#         path_length = len(path) - 1
+#         for dist_on_spoke, coord in enumerate(path):
+#             if coord in tiledata:
+#                 tiledata[coord]["spine_data"] = {
+#                     "spoke_id": i,
+#                     "dist_on_spoke": dist_on_spoke,
+#                     "spoke_max_dist": path_length
+#                 }
     
-    if DEBUG:
-        print(f"[tiledata] ✅ Rich spine data assigned using inland distance of {min_inland_distance}.")
+#     if DEBUG:
+#         print(f"[tiledata] ✅ Rich spine data assigned using inland distance of {min_inland_distance}.")

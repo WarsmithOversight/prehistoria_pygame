@@ -7,13 +7,16 @@
       "floodplains",
       "tropical"
     ],
-    "base_movement": 5,
-    "movement_costs": {
-      "default": 1,
-      "desert": 0,
-      "scrublands": 0,
-      "highlands": 0,
-      "hills": 0
+    "base_movement": 3,
+    "terrain_movement_map": {
+      "default": "medium",
+      "Plains": "good",
+      "Woodlands": "good",
+      "Marsh": "good",
+      "DesertDunes": "bad",
+      "Scrublands": "bad",
+      "Highlands": "medium",
+      "Hills": "medium"
     },
     "special_abilities": [
       "river_movement"

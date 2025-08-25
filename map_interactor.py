@@ -16,6 +16,7 @@ class MapInteractor:
         # Reset click and pan state for this frame
         pan_delta = (0, 0)
         clicked_coord = None
+        hovered_coord = None
 
         # --- Event Processing ---
         for event in events:
@@ -26,6 +27,7 @@ class MapInteractor:
                 # If we are not panning, register a click on the hovered tile
                 if self.hovered_tile:
                     clicked_coord = (self.hovered_tile.q, self.hovered_tile.r)
+                    print(f"[Interactor] ✅ Clicked {clicked_coord} - Terrain: {getattr(self.hovered_tile, 'terrain', 'N/A')}")
 
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 self.is_panning = False
@@ -55,4 +57,4 @@ class MapInteractor:
                 self.hovered_tile = tile
         
         # Return both values to the main loop
-        return pan_delta, clicked_coord
+        return pan_delta, clicked_coord, hovered_coord

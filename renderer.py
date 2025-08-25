@@ -1,7 +1,7 @@
 # renderer.py
 # The core rendering engine, responsible for sorting and drawing all visual elements.
 
-from shared_helpers import hex_to_pixel, snap_zoom_to_nearest_step
+from shared_helpers import hex_to_pixel, snap_zoom_to_nearest_step, hex_geometry
 import pygame, hashlib
 
 
@@ -34,7 +34,8 @@ def initialize_render_states(persistent_state):
 
         # --- Layer 1: Core World ---
         "tile":          lambda r: 1.0 + vert_offset(r),
-        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0001, # Just above its tile
+        "path_curve":     lambda r: 1.0 + vert_offset(r) + 0.0001, # Just under the token
+        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0002, # Just above its tile
 
         # --- Layer 2: Debug Overlays ---
         "debug_icon":    lambda r: 2.0 + 0.1,
@@ -324,7 +325,21 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
 
                 # Blit the pre-scaled mask. This is extremely fast.
                 screen.blit(final_glow, (px + ox, py + oy), special_flags=pygame.BLEND_RGB_ADD)
-
+    
+    # Check for movement overlay glow
+    if getattr(drawable, 'movement_overlay', False):
+        color_key = getattr(drawable, 'move_color', 'good')
+        
+        tinted_glows_by_color = assets_state.get("tinted_glows", {})
+        masks_for_this_color = tinted_glows_by_color.get(color_key)
+        
+        if masks_for_this_color:
+            final_glow = masks_for_this_color.get(current_zoom)
+            if final_glow:
+                off_x, off_y = persistent_state["pers_asset_blit_offset"]
+                ox = int(off_x * current_zoom)
+                oy = int(off_y * current_zoom)
+                screen.blit(final_glow, (px + ox, py + oy))
         
 def circle_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
 
@@ -403,29 +418,97 @@ def edge_line_type_interpreter(screen, drawable, persistent_state, assets_state,
     pygame.draw.line(screen, color, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), thickness)
 
 def player_token_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
-    """
-    Renders the player token.
-    """
-    current_zoom = variable_state.get("var_current_zoom", 1.0)
-    
-    # Get pixel coordinates for the player's hex
-    q = getattr(drawable, 'q', drawable.get('coord', [0, 0])[0])
-    r = getattr(drawable, 'r', drawable.get('coord', [0, 0])[1])
-    px, py = hex_to_pixel(q, r, persistent_state, variable_state)
-        
-    # Get the correctly pre-scaled sprite and its offset
+    """Renders the player token using pixel_pos if available, otherwise q,r."""
 
+    current_zoom = variable_state.get("var_current_zoom", 1.0)
+
+    if 'pixel_pos' in drawable:
+        # The token is animating, use the precise pixel position.
+        base_px, base_py = drawable['pixel_pos']
+        # Apply camera transforms to the world-space pixel position
+        offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
+        px = (base_px * current_zoom) + offset_x
+        py = (base_py * current_zoom) + offset_y
+    else:
+        # The token is static, calculate position from its hex coordinates.
+        px, py = hex_to_pixel(drawable['q'], drawable['r'], persistent_state, variable_state)
+
+    # 🖼️ Get the correctly pre-scaled sprite and its offset
     sprite_map = drawable.get("scale") or {1.0: drawable["sprite"]}
     final = sprite_map.get(current_zoom)
     off_x, off_y = drawable["blit_offset"]
 
     if final:
-        # Scale the offset for the current zoom level
+        # Scale the blit offset for the current zoom level
         offset_scale = current_zoom
         ox = int(off_x * offset_scale)
         oy = int(off_y * offset_scale)
         screen.blit(final, (px + ox, py + oy))
 
+def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
+    """Helper to draw a quadratic Bézier curve."""
+    points = []
+    # The more steps, the smoother the curve
+    for t in range(21):
+        t /= 20.0
+        x = (1 - t)**2 * p0[0] + 2 * (1 - t) * t * p1[0] + t**2 * p2[0]
+        y = (1 - t)**2 * p0[1] + 2 * (1 - t) * t * p1[1] + t**2 * p2[1]
+        points.append((x, y))
+
+    pygame.draw.lines(surface, color, False, points, thickness)
+
+def path_curve_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """Draws a smooth curve inside a tile based on the path's entry and exit points."""
+    coord = drawable.get("coord")
+    prev_coord = drawable.get("prev_coord")
+    next_coord = drawable.get("next_coord")
+
+    geom = hex_geometry(coord[0], coord[1], persistent_state, variable_state)
+    
+    # Determine the start and end points of the curve for this tile
+    entry_dir, exit_dir = None, None
+
+    if prev_coord is None:
+        p_start = geom['center']
+    else:
+        entry_dir = [d for d, n in geom['neighbors'].items() if n == prev_coord][0]
+        edge_corners = geom['edges'][persistent_state['pers_edge_index'][entry_dir]]
+        p_start = ((edge_corners[0][0] + edge_corners[1][0]) / 2, (edge_corners[0][1] + edge_corners[1][1]) / 2)
+
+    if next_coord is None:
+        p_end = geom['center']
+    else:
+        exit_dir = [d for d, n in geom['neighbors'].items() if n == next_coord][0]
+        edge_corners = geom['edges'][persistent_state['pers_edge_index'][exit_dir]]
+        p_end = ((edge_corners[0][0] + edge_corners[1][0]) / 2, (edge_corners[0][1] + edge_corners[1][1]) / 2)
+
+    # A path is straight if the entry and exit directions are opposites.
+    opposite_directions = {
+        "E": "W", "W": "E",
+        "NE": "SW", "SW": "NE",
+        "NW": "SE", "SE": "NW"
+    }
+    is_straight = entry_dir and exit_dir and exit_dir == opposite_directions.get(entry_dir)
+
+    zoom = variable_state.get("var_current_zoom", 1.0)
+    thickness = max(2, int(16 * zoom))
+    color = (255, 222, 33)
+
+    if is_straight:
+        pygame.draw.line(screen, color, p_start, p_end, thickness)
+    else:
+        # For turns, find the pivot corner to use as the Bézier control point
+        control_point = geom['center']
+        if prev_coord and next_coord:
+            entry_corners = set(persistent_state["pers_hex_anatomy"]["edges"][persistent_state['pers_edge_index'][entry_dir]]["corner_pair"])
+            exit_corners = set(persistent_state["pers_hex_anatomy"]["edges"][persistent_state['pers_edge_index'][exit_dir]]["corner_pair"])
+            # Find the shared corner, if one exists
+            intersection = entry_corners.intersection(exit_corners)
+            if intersection:
+                pivot_corner_index = list(intersection)[0]
+                control_point = geom['corners'][pivot_corner_index]
+        _draw_bezier_curve(screen, p_start, control_point, p_end, thickness, color)
+     
 # ──────────────────────────────────────────────────
 # ⌨️ Interpreter Dispatch
 # ──────────────────────────────────────────────────
@@ -436,6 +519,7 @@ TYPEMAP = {
     "text": text_type_interpreter,
     "edge_line": edge_line_type_interpreter,
     "player_token": player_token_interpreter,
+    "path_curve": path_curve_interpreter,
 }
 
 

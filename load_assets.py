@@ -21,7 +21,7 @@ def load_player_assets(assets_state, persistent_state):
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
     
     # Define how large the token should be relative to the hex tile width
-    TOKEN_SCALE_FACTOR = 0.70 
+    TOKEN_SCALE_FACTOR = 0.60 
     tile_hex_w = persistent_state["pers_tile_hex_w"]
 
     player_assets = {}
@@ -100,8 +100,6 @@ def initialize_asset_states(persistent_state):
     persistent_state["pers_asset_blit_offset"] = (-center_x, -center_y)
     
     if DEBUG:
-        if "pers_tile_canvas_w" in persistent_state:
-            print(f"[assets] ✅ Key 'pers_tile_canvas_w' successfully added in initialize_asset_states.")
         print(f"[assets] ✅ Universal asset states loaded.")
 
 
@@ -233,7 +231,6 @@ def load_tileset_assets(assets_state, persistent_state):
             # Draw the tinted hexagon and blit it onto the sprite
             pygame.draw.polygon(tint_surface, TINT_COLOR, hex_points)
             sprite.blit(tint_surface, (0, 0))
-            print(f"[assets] 🎨 Applied a hex-masked blue tint to '{filename}'.")
 
         elif terrain_name == "Scrublands":
             # This color is a sandy yellow sampled from your desert dunes tile
@@ -253,7 +250,6 @@ def load_tileset_assets(assets_state, persistent_state):
             # Draw the tinted hexagon and blit it onto the sprite
             pygame.draw.polygon(tint_surface, TINT_COLOR, hex_points)
             sprite.blit(tint_surface, (0, 0))
-            print(f"[assets] 🎨 Applied a hex-masked sand tint to '{filename}'.")
 
         elif terrain_name == "Woodlands":
             # This color is a deep, humid green to create a more tropical feel.
@@ -273,19 +269,16 @@ def load_tileset_assets(assets_state, persistent_state):
             # Draw the tinted hexagon and blit it onto the sprite
             pygame.draw.polygon(tint_surface, TINT_COLOR, hex_points)
             sprite.blit(tint_surface, (0, 0))
-            print(f"[assets] 🎨 Applied a jungle green tint to '{filename}'.")
 
         elif terrain_name == "Mountain":
 
             # Desaturate the mountain sprite by 30%
             sprite = desaturate_surface(sprite, 0.30)
-            print(f"[assets] 🎨 Desaturated '{filename}'.")
 
         elif terrain_name == "Highlands":
 
             # Desaturate the highlands sprite by 50%
             sprite = desaturate_surface(sprite, 0.50)
-            print(f"[assets] 🎨 Desaturated '{filename}'.")
             
         # 📏 Pre-scale for Zoom Levels
     
@@ -586,9 +579,7 @@ def create_glow_mask(persistent_state, assets_state):
     Creates a full set of pre-scaled hexagonal glow masks, one for each
     discrete zoom level, and caches them for high-performance rendering.
     """
-    # ──────────────────────────────────────────────────
     # ⚙️ Setup & Dependencies
-    # ──────────────────────────────────────────────────
     canvas_w = persistent_state["pers_tile_canvas_w"]
     canvas_h = persistent_state["pers_tile_canvas_h"]
     hex_w = persistent_state["pers_tile_hex_w"]
@@ -597,13 +588,11 @@ def create_glow_mask(persistent_state, assets_state):
     # Get all the zoom levels we need to pre-scale for.
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
     
-    # 1. Create a single, high-quality base surface that tightly fits the hexagon artwork.
+    # Create a single, high-quality base surface that tightly fits the hexagon artwork.
     hex_surface = pygame.Surface((hex_w, hex_h), pygame.SRCALPHA)
     center_x, center_y = hex_w / 2, hex_h / 2
     
-    # ──────────────────────────────────────────────────
     # 📐 Define Hexagon Geometry & Draw Base Glow
-    # ──────────────────────────────────────────────────
     # This part is the same as before, creating the beautiful gradient glow.
     outer_points = [
         (center_x, center_y - hex_h / 2), (center_x + hex_w / 2, center_y - hex_h / 4),
@@ -628,9 +617,7 @@ def create_glow_mask(persistent_state, assets_state):
             if brightness > 0:
                 pygame.draw.line(hex_surface, (brightness,) * 3, (start_x, start_y), (end_x, end_y), 2)
 
-    # ──────────────────────────────────────────────────
     # 🖼️ Pre-scale and Composite For All Zoom Levels
-    # ──────────────────────────────────────────────────
     glow_masks_by_zoom = {}
     
     # Loop through each zoom step and create a perfectly scaled mask.
@@ -659,3 +646,121 @@ def create_glow_mask(persistent_state, assets_state):
             
     print(f"[assets] ✅ Pre-scaled hexagonal glow masks created for all zoom levels.")
     assets_state["glow_masks_by_zoom"] = glow_masks_by_zoom
+
+
+
+def create_tinted_glow_masks(persistent_state, assets_state):
+    """
+    Creates a set of pre-scaled, tinted hexagonal glow masks for movement overlays.
+    This version uses a multi-polygon approach to create a distinct border effect.
+    """
+    # ──────────────────────────────────────────────────
+    # 🎨 Define Colors & Config
+    # ──────────────────────────────────────────────────
+    colors_to_generate = {
+        "good": (40, 180, 70),      # A brighter, more vibrant Green
+        "medium": (255, 215, 0),   # Gold/Yellow
+        "bad": (220, 20, 60),       # Crimson Red
+    }
+    
+    # Define the bands for our gradient effect as percentages of the total hex size.
+    # These values represent the "stop" points for each band, starting from the outside edge.
+    BORDER_STOPS = {
+        "outer_edge": 1.0,          # The absolute outer edge of the hex.
+        "solid_band_start": 0.98,   # Start of the solid color band (creates a 2% fade-in).
+        "solid_band_end": 0.85,     # End of the solid color band.
+        "inner_fade_end": 0.70      # End of the fade-out, leaving the center 70% clear.
+    }
+    
+    # The maximum alpha for the solid part of the glow.
+    MAX_ALPHA = 170 
+
+    assets_state["tinted_glows"] = {}
+
+    # ──────────────────────────────────────────────────
+    # ✨ Generate a Mask for Each Color
+    # ──────────────────────────────────────────────────
+    for color_name, color_rgb in colors_to_generate.items():
+        # Get base dimensions from persistent state.
+        canvas_w = persistent_state["pers_tile_canvas_w"]
+        canvas_h = persistent_state["pers_tile_canvas_h"]
+        hex_w = persistent_state["pers_tile_hex_w"]
+        hex_h = persistent_state["pers_tile_hex_h"]
+        zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+        
+        # Create the high-quality surface to draw our master glow on.
+        hex_surface = pygame.Surface((hex_w, hex_h), pygame.SRCALPHA)
+        center_x, center_y = hex_w / 2, hex_h / 2
+
+        # 📐 Define Concentric Hexagon Points
+        # Helper function to generate the points for a hexagon at a given scale.
+        def get_hex_points(scale):
+            # The base points for a full-sized (scale=1.0) hexagon.
+            base_points = [
+                (center_x, center_y - hex_h / 2), (center_x + hex_w / 2, center_y - hex_h / 4),
+                (center_x + hex_w / 2, center_y + hex_h / 4), (center_x, center_y + hex_h / 2),
+                (center_x - hex_w / 2, center_y + hex_h / 4), (center_x - hex_w / 2, center_y - hex_h / 4)
+            ]
+            if abs(scale - 1.0) < 1e-6:
+                return base_points
+            # For other scales, interpolate each point towards the center.
+            return [(center_x + (px - center_x) * scale, center_y + (py - center_y) * scale) for px, py in base_points]
+
+        # Generate the vertex lists for each of our defined border stops.
+        points_outer_edge = get_hex_points(BORDER_STOPS["outer_edge"])
+        points_solid_start = get_hex_points(BORDER_STOPS["solid_band_start"])
+        points_solid_end = get_hex_points(BORDER_STOPS["solid_band_end"])
+        points_inner_fade_end = get_hex_points(BORDER_STOPS["inner_fade_end"])
+
+        # ✍️ Draw the Gradient Bands
+        # This is where the magic happens. We draw thin, interpolated polygons.
+        # The number of steps determines how smooth the gradient is.
+        GRADIENT_STEPS = 15 
+
+        # 1. Draw the outer fade-in (from transparent to solid).
+        for i in range(GRADIENT_STEPS):
+            t = i / (GRADIENT_STEPS - 1) # Interpolation factor (0.0 to 1.0)
+            alpha = int(MAX_ALPHA * t)   # Alpha goes from 0 to MAX_ALPHA
+            
+            # Create the polygon for this step by interpolating between the two boundaries.
+            poly_points = []
+            for j in range(6):
+                x = points_outer_edge[j][0] * (1 - t) + points_solid_start[j][0] * t
+                y = points_outer_edge[j][1] * (1 - t) + points_solid_start[j][1] * t
+                poly_points.append((x, y))
+            pygame.draw.polygon(hex_surface, (*color_rgb, alpha), poly_points)
+
+        # 2. Draw the solid color band.
+        pygame.draw.polygon(hex_surface, (*color_rgb, MAX_ALPHA), points_solid_start)
+
+        # 3. Draw the inner fade-out (from solid to transparent).
+        for i in range(GRADIENT_STEPS):
+            t = i / (GRADIENT_STEPS - 1)
+            alpha = int(MAX_ALPHA * (1 - t)) # Alpha goes from MAX_ALPHA down to 0
+
+            poly_points = []
+            for j in range(6):
+                x = points_solid_end[j][0] * (1 - t) + points_inner_fade_end[j][0] * t
+                y = points_solid_end[j][1] * (1 - t) + points_inner_fade_end[j][1] * t
+                poly_points.append((x, y))
+            pygame.draw.polygon(hex_surface, (*color_rgb, alpha), poly_points)
+
+        # 🖼️ Pre-scale and Composite For All Zoom Levels
+        # This part is identical to your original function, ensuring performance.
+        glow_masks_by_zoom = {}
+        for z in zoom_steps:
+            scaled_canvas_w = max(1, int(canvas_w * z))
+            scaled_canvas_h = max(1, int(canvas_h * z))
+            scaled_hex_w = max(1, int(hex_w * z))
+            scaled_hex_h = max(1, int(hex_h * z))
+            scaled_hex_surface = pygame.transform.smoothscale(hex_surface, (scaled_hex_w, scaled_hex_h))
+            final_surface_for_zoom = pygame.Surface((scaled_canvas_w, scaled_canvas_h), pygame.SRCALPHA)
+            offset_x, offset_y = persistent_state["pers_asset_blit_offset"]
+            blit_pos_x = (scaled_canvas_w / 2) + (offset_x * z)
+            blit_pos_y = (-offset_y * z) - (scaled_hex_h / 2)
+            final_surface_for_zoom.blit(scaled_hex_surface, (blit_pos_x, blit_pos_y))
+            glow_masks_by_zoom[z] = final_surface_for_zoom
+                
+        assets_state["tinted_glows"][color_name] = glow_masks_by_zoom
+            
+    print(f"[assets] ✅ Pre-scaled tinted glow masks created for {list(colors_to_generate.keys())}.")
