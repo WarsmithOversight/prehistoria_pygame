@@ -212,6 +212,10 @@ while running:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 game_manager.advance_turn()
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_f:
+                game_manager.add_resource_to_active_player_tile()
             
     # ──────────────────────────────────────────────────
     # ⚙️ Update State

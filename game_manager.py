@@ -293,3 +293,21 @@ class GameManager:
             tile = self.tile_objects.get(coord)
             if tile:
                 tile.movement_overlay = is_visible
+
+    def add_resource_to_active_player_tile(self, resource_type="stone"):
+        """Adds a resource to the tile the active player is currently on."""
+        player = self.active_player
+        coord = (player.q, player.r)
+        tile = self.tile_objects.get(coord)
+
+        if not tile:
+            return
+
+        # Ensure the 'resources' key exists in the tilebox dictionary
+        if 'resources' not in tile.tilebox:
+            tile.tilebox['resources'] = []
+        
+        # Add the new resource
+        tile.tilebox['resources'].append(resource_type)
+        
+        print(f"[GameManager] ✅ Added '{resource_type}' to tile {coord}. Total: {len(tile.tilebox['resources'])}.")

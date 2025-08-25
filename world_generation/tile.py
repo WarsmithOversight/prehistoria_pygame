@@ -8,6 +8,8 @@ class Tile:
         self.is_selected = False
         self.movement_overlay = False
         self.move_color = None
+        self.tilebox = {}
+        
         for key, value in initial_data.items():
             setattr(self, key, value)
 

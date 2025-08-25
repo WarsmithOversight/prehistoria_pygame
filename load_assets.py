@@ -6,29 +6,22 @@ from shared_helpers import build_zoom_steps
 
 DEBUG = True
 
-# ──────────────────────────────────────────────────
 # ⚙️ Initialization
-# ──────────────────────────────────────────────────
-
 def load_player_assets(assets_state, persistent_state):
     """
     Loads and processes all player token sprites.
     """
-    # ──────────────────────────────────────────────────
     # ⚙️ Setup
-    # ──────────────────────────────────────────────────
     assets_path = "sprites/player_token"
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
     
     # Define how large the token should be relative to the hex tile width
-    TOKEN_SCALE_FACTOR = 0.60 
+    TOKEN_SCALE_FACTOR = 0.55
     tile_hex_w = persistent_state["pers_tile_hex_w"]
 
     player_assets = {}
 
-    # ──────────────────────────────────────────────────
     # 🔄 Load, Parse, and Scale
-    # ──────────────────────────────────────────────────
     for filename in os.listdir(assets_path):
         if not filename.endswith(".png"):
             continue

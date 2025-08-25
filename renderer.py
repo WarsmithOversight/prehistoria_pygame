@@ -341,6 +341,57 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                 ox = int(off_x * current_zoom)
                 oy = int(off_y * current_zoom)
                 screen.blit(final_glow, (px + ox, py + oy))
+
+    # 🧠 Delegate to the Tilebox interpreter if the tilebox contains anything
+    if hasattr(drawable, 'tilebox') and drawable.tilebox:
+        tilebox_interpreter(screen, drawable, persistent_state, variable_state, assets_state)
+
+# Add this new function to renderer.py
+
+def tilebox_interpreter(screen, tile_drawable, persistent_state, variable_state, assets_state):
+    """
+    The specialist interpreter for drawing status icons in the "Tilebox" area.
+    """
+    # ⚙️ Setup & Data
+    # Get the list of resources to display from the tile
+    resources_to_draw = tile_drawable.tilebox.get('resources', [])
+    if not resources_to_draw:
+        return
+
+    # Get the pixel geometry for the tile
+    q, r = tile_drawable.q, tile_drawable.r
+    geom = hex_geometry(q, r, persistent_state, variable_state)
+
+    # Define the tilebox hex using its corners
+    nw_corner = geom['corners'][5]
+    ne_corner = geom['corners'][1]
+
+    # ✍️ Calculate Icon Positions
+    # For a single resource, place it in the center of the brow
+    if len(resources_to_draw) == 1:
+        # The center is simply the midpoint of the two corners
+        center_x = (nw_corner[0] + ne_corner[0]) / 2
+        center_y = (nw_corner[1] + ne_corner[1]) / 2
+        anchor_points = [(center_x, center_y)]
+    else:
+        # For multiple resources, space them out evenly along the brow
+        anchor_points = []
+        num_icons = len(resources_to_draw)
+        for i in range(num_icons):
+            # Interpolate between the NW and NE corners
+            t = (i + 1) / (num_icons + 1) # e.g., for 2 icons, t = 0.33 and 0.66
+            x = nw_corner[0] * (1 - t) + ne_corner[0] * t
+            y = nw_corner[1] * (1 - t) + ne_corner[1] * t
+            anchor_points.append((x, y))
+
+    # 🎨 Draw the Icons
+    # Define a simple color for our resource icon for now
+    resource_color = (255, 165, 0) # Orange
+    zoom = variable_state.get("var_current_zoom", 1.0)
+    radius = max(2, int(8 * zoom))
+
+    for point in anchor_points:
+        pygame.draw.circle(screen, resource_color, (int(point[0]), int(point[1])), radius)
         
 def circle_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
 
