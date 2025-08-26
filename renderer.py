@@ -37,13 +37,16 @@ def initialize_render_states(persistent_state):
         "path_curve":     lambda r: 1.0 + vert_offset(r) + 0.0001, # Just under the token
         "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0002, # Just above its tile
 
-        # --- Layer 2: Debug Overlays ---
+        # --- Layer 2: Terrain Debug Overlays ---
         "debug_icon":    lambda r: 2.0 + 0.1,
         "terrain_tag":   lambda r: 2.0 + 0.2,
         "coordinate":    lambda r: 2.0 + 0.3,
         "continent_spine": lambda r: 2.0 + 0.4,
         "region_border": lambda r: 2.0 + 0.5,
         "debug_gap":     lambda r: 2.0 + 0.6,
+
+        # --- Layer 3: UI  ---
+        "ui_panel":      lambda r: 3.0,
     }
     
     print("[renderer] ✅ Render states and z-formulas initialized.")
@@ -587,6 +590,18 @@ def debug_triangle_interpreter(screen, drawable, persistent_state, assets_state,
     # ✍️ Draw the final polygon on the screen
     pygame.draw.polygon(screen, color, screen_points)
 
+def ui_panel_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """Renders a pre-surfaced UI panel from the notebook."""
+    # Get the pre-rendered surface from the drawable
+    surface = drawable.get("surface")
+    
+    # Get the position and dimensions from the drawable
+    rect = drawable.get("rect")
+    
+    # Blit the surface to the screen if both exist
+    if surface and rect:
+        screen.blit(surface, rect)
+
 # ──────────────────────────────────────────────────
 # ⌨️ Interpreter Dispatch
 # ──────────────────────────────────────────────────
@@ -599,6 +614,7 @@ TYPEMAP = {
     "player_token": player_token_interpreter,
     "path_curve": path_curve_interpreter,
     "debug_triangle": debug_triangle_interpreter,
+    "ui_panel": ui_panel_interpreter,
 }
 
 

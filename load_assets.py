@@ -757,3 +757,84 @@ def create_tinted_glow_masks(persistent_state, assets_state):
         assets_state["tinted_glows"][color_name] = glow_masks_by_zoom
             
     print(f"[assets] ✅ Pre-scaled tinted glow masks created for {list(colors_to_generate.keys())}.")
+
+
+# ──────────────────────────────────────────────────
+# 🎨 UI Asset Constants
+# ──────────────────────────────────────────────────
+# Constants for creating the grayscale background texture
+GRAYSCALE_TEXTURE_SIZE = (256, 256) # The scale of the repeating background pattern
+
+# Constants for creating the 9-slice border assets
+FINAL_BORDER_WIDTH = 50 # The final width and height of each border piece in pixels
+
+# ──────────────────────────────────────────────────
+# 🖼️ UI Asset Creation Pipeline
+# ──────────────────────────────────────────────────
+
+def load_ui_texture(assets_state, ui_path):
+    """Loads the single, full-resolution source texture for the UI."""
+    source_file = os.path.join(ui_path, "ZM_Basecolor.png")
+    try:
+        full_res_texture = pygame.image.load(source_file).convert_alpha()
+        assets_state["ui_assets"]["source_texture"] = full_res_texture
+        if DEBUG: print(f"[assets] ✅ Loaded source UI texture.")
+    except pygame.error as e:
+        if DEBUG: print(f"[assets] ❌ Error loading source UI texture: {e}")
+
+def create_grayscale_ui_texture(assets_state):
+    """Creates a scaled, desaturated texture for UI backgrounds."""
+    source_texture = assets_state["ui_assets"].get("source_texture")
+    if not source_texture: return
+
+    # Scale the texture down to the desired repeating size
+    scaled_texture = pygame.transform.smoothscale(source_texture, GRAYSCALE_TEXTURE_SIZE)
+    
+    # Desaturate it to create the watermark effect
+    grayscale_texture = desaturate_surface(scaled_texture, 1.0)
+    assets_state["ui_assets"]["background_watermark"] = grayscale_texture
+    if DEBUG: print(f"[assets] ✅ Created grayscale background watermark.")
+
+def create_ui_border_assets(assets_state):
+    """
+    Slices the master UI texture into a 3x3 grid of border pieces.
+    """
+    # 🎨 Asset Loading
+    source_texture = assets_state["ui_assets"].get("source_texture")
+    if not source_texture:
+        if DEBUG: print("[assets] ⚠️  Source texture not found for border creation.")
+        return
+
+    # 🏞️ Master Tile Creation
+    # The master tile is scaled to be 3x the final border width,
+    # so it can be perfectly sliced into a 3x3 grid.
+    master_tile_size = (FINAL_BORDER_WIDTH * 3, FINAL_BORDER_WIDTH * 3)
+    master_tile = pygame.transform.smoothscale(source_texture, master_tile_size)
+    
+    # 🔪 Slicing into 9 Pieces
+    border_pieces = {}
+    piece_size = FINAL_BORDER_WIDTH
+    
+    for row in range(3):
+        for col in range(3):
+            # Calculate the piece number (1-9), stored as a string key
+            piece_num = str(row * 3 + col + 1)
+            
+            # Define the area to slice from the master tile
+            slice_rect = pygame.Rect(col * piece_size, row * piece_size, piece_size, piece_size)
+            
+            # Create a new, independent surface for the piece by copying the subsurface
+            border_pieces[piece_num] = master_tile.subsurface(slice_rect).copy()
+
+    # 💾 Asset Saving
+    assets_state["ui_assets"]["border_pieces"] = border_pieces
+    if DEBUG: print(f"[assets] ✅ Created 9 UI border pieces.")
+
+def load_all_ui_assets(assets_state):
+    """Orchestrator to run the entire UI asset creation pipeline."""
+    assets_state["ui_assets"] = {}
+    ui_path = "sprites/ui"
+    
+    load_ui_texture(assets_state, ui_path)
+    create_grayscale_ui_texture(assets_state)
+    create_ui_border_assets(assets_state) # this is what we're designing now

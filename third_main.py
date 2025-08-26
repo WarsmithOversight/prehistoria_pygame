@@ -9,6 +9,7 @@ from player import Player
 from game_manager import GameManager
 from event_bus import EventBus
 from tween_manager import TweenManager
+from ui.ui_manager import UIManager
 
 from world_generation.initialize_tiledata import (
     initialize_tiledata, initialize_region_seeds,
@@ -32,6 +33,7 @@ from load_assets import (
     load_river_assets, load_river_mouth_assets,
     load_river_end_assets, initialize_asset_states,
     create_glow_mask, load_player_assets, create_tinted_glow_masks,
+    load_all_ui_assets
 )
 from world_generation.tile import create_tile_objects_from_data
 from shared_helpers import initialize_shared_helper_states
@@ -136,6 +138,7 @@ load_river_end_assets(assets_state, persistent_state)
 load_player_assets(assets_state, persistent_state)
 create_glow_mask(persistent_state, assets_state)
 create_tinted_glow_masks(persistent_state, assets_state)
+load_all_ui_assets(assets_state)
 
 # --- 📷 Exports ---
 if GENERATE_EXPORTS:
@@ -189,7 +192,7 @@ players.append(
 camera_controller = CameraController(persistent_state, variable_state)
 map_interactor = MapInteractor()
 event_bus = EventBus()
-
+ui_manager = UIManager(persistent_state, assets_state)
 tween_manager = TweenManager(persistent_state, variable_state)
 game_manager = GameManager(players, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state)
 
@@ -223,6 +226,9 @@ while running:
 
     # Update all active animations
     tween_manager.update(dt)
+
+    # update all UIs
+    ui_manager.update(notebook)
 
     # Handle direct camera controls like keyboard panning and scroll wheel zooming.
     camera_controller.handle_events(events, persistent_state)
