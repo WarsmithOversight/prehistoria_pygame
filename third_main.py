@@ -192,7 +192,7 @@ players.append(
 camera_controller = CameraController(persistent_state, variable_state)
 map_interactor = MapInteractor()
 event_bus = EventBus()
-ui_manager = UIManager(persistent_state, assets_state)
+ui_manager = UIManager(persistent_state, assets_state, tile_objects) 
 tween_manager = TweenManager(persistent_state, variable_state)
 game_manager = GameManager(players, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state)
 
@@ -207,7 +207,6 @@ while running:
     events = pygame.event.get()
     mouse_pos = pygame.mouse.get_pos()
 
-    # The only event handled directly in the loop is quitting the game.
     for event in events:
         if event.type == pygame.QUIT:
             running = False
@@ -228,27 +227,32 @@ while running:
     tween_manager.update(dt)
 
     # update all UIs
+    ui_handled_mouse = ui_manager.handle_events(events, mouse_pos)
     ui_manager.update(notebook)
 
     # Handle direct camera controls like keyboard panning and scroll wheel zooming.
     camera_controller.handle_events(events, persistent_state)
     
-    # The interactor now returns the pan delta, clicked coord, and hovered coord
-    pan_delta, clicked_coord, hovered_coord = map_interactor.handle_events(events, mouse_pos, tile_objects, persistent_state, variable_state)
+    if not ui_handled_mouse:
+        # The interactor now returns the pan delta, clicked coord, and hovered coord
+        pan_delta, clicked_coord, hovered_coord = map_interactor.handle_events(events, mouse_pos, tile_objects, persistent_state, variable_state)
 
-    # Update the path overlay based on the currently hovered tile
-    game_manager.update_path_overlay(hovered_coord)
+        # Update the path overlay based on the currently hovered tile
+        game_manager.update_path_overlay(hovered_coord)
 
-    # If a tile was clicked, pass its coordinate to the GameManager to handle
-    if clicked_coord:
-        game_manager.handle_click(clicked_coord)
+        # If a tile was clicked, pass its coordinate to the GameManager to handle
+        if clicked_coord:
+            game_manager.handle_click(clicked_coord)
 
-    # If the interactor reported a drag, command the camera to pan.
-    if pan_delta != (0, 0):
-        camera_controller.pan(pan_delta[0], pan_delta[1])
+        # If the interactor reported a drag, command the camera to pan.
+        if pan_delta != (0, 0):
+            camera_controller.pan(pan_delta[0], pan_delta[1])
+    else:
+        # If the UI is being hovered, clear any existing path overlay
+        game_manager.update_path_overlay(None)
         
     # Finalize the camera's state for this frame
-    camera_controller.update(persistent_state, variable_state)
+    camera_controller.update(persistent_state, variable_state)        
         
     # 🎨 Render
     render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state)

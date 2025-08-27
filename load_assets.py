@@ -644,25 +644,34 @@ def create_glow_mask(persistent_state, assets_state):
 
 def create_tinted_glow_masks(persistent_state, assets_state):
     """
-    Creates a set of pre-scaled, tinted hexagonal glow masks for movement overlays.
-    This version uses a multi-polygon approach to create a distinct border effect.
+    Creates a set of pre-scaled, tinted hexagonal glow masks for all movement and hazard types.
+    Uses different border styles for movement vs. hazards.
     """
     # ──────────────────────────────────────────────────
-    # 🎨 Define Colors & Config
+    # 🎨 Define All Colors and Styles
     # ──────────────────────────────────────────────────
+    # Combine all colors into one dictionary
     colors_to_generate = {
-        "good": (40, 180, 70),      # A brighter, more vibrant Green
-        "medium": (255, 215, 0),   # Gold/Yellow
-        "bad": (220, 20, 60),       # Crimson Red
+        "good": (40, 180, 70),
+        "medium": (255, 215, 0),
+        "bad": (220, 20, 60),
+        "hazard": (150, 0, 210), # Deep Violet
     }
     
-    # Define the bands for our gradient effect as percentages of the total hex size.
-    # These values represent the "stop" points for each band, starting from the outside edge.
-    BORDER_STOPS = {
-        "outer_edge": 1.0,          # The absolute outer edge of the hex.
-        "solid_band_start": 0.98,   # Start of the solid color band (creates a 2% fade-in).
-        "solid_band_end": 0.85,     # End of the solid color band.
-        "inner_fade_end": 0.70      # End of the fade-out, leaving the center 70% clear.
+    # Style 1: Primary border for standard movement (Outer Band)
+    PRIMARY_BORDER_STOPS = {
+        "outer_edge": 1.0,
+        "solid_band_start": 0.98,
+        "solid_band_end": 0.85,
+        "inner_fade_end": 0.70,
+    }
+
+    # Style 2: Secondary border for hazards (Inner Ring)
+    SECONDARY_BORDER_STOPS = {
+        "outer_edge": 0.85,
+        "solid_band_start": 0.83,
+        "solid_band_end": 0.78,
+        "inner_fade_end": 0.73,
     }
     
     # The maximum alpha for the solid part of the glow.
@@ -674,6 +683,7 @@ def create_tinted_glow_masks(persistent_state, assets_state):
     # ✨ Generate a Mask for Each Color
     # ──────────────────────────────────────────────────
     for color_name, color_rgb in colors_to_generate.items():
+        
         # Get base dimensions from persistent state.
         canvas_w = persistent_state["pers_tile_canvas_w"]
         canvas_h = persistent_state["pers_tile_canvas_h"]
@@ -699,12 +709,17 @@ def create_tinted_glow_masks(persistent_state, assets_state):
             # For other scales, interpolate each point towards the center.
             return [(center_x + (px - center_x) * scale, center_y + (py - center_y) * scale) for px, py in base_points]
 
-        # Generate the vertex lists for each of our defined border stops.
-        points_outer_edge = get_hex_points(BORDER_STOPS["outer_edge"])
-        points_solid_start = get_hex_points(BORDER_STOPS["solid_band_start"])
-        points_solid_end = get_hex_points(BORDER_STOPS["solid_band_end"])
-        points_inner_fade_end = get_hex_points(BORDER_STOPS["inner_fade_end"])
+        if color_name == "hazard":
+            border_stops_to_use = SECONDARY_BORDER_STOPS
+        else:
+            border_stops_to_use = PRIMARY_BORDER_STOPS
 
+        # Generate the vertex lists for each of our defined border stops.
+        points_outer_edge = get_hex_points(border_stops_to_use["outer_edge"])
+        points_solid_start = get_hex_points(border_stops_to_use["solid_band_start"])
+        points_solid_end = get_hex_points(border_stops_to_use["solid_band_end"])
+        points_inner_fade_end = get_hex_points(border_stops_to_use["inner_fade_end"])
+        
         # ✍️ Draw the Gradient Bands
         # This is where the magic happens. We draw thin, interpolated polygons.
         # The number of steps determines how smooth the gradient is.
@@ -766,7 +781,7 @@ def create_tinted_glow_masks(persistent_state, assets_state):
 GRAYSCALE_TEXTURE_SIZE = (256, 256) # The scale of the repeating background pattern
 
 # Constants for creating the 9-slice border assets
-FINAL_BORDER_WIDTH = 12 # The final width and height of each border piece in pixels
+FINAL_BORDER_WIDTH = 10 # The final width and height of each border piece in pixels
 
 # ──────────────────────────────────────────────────
 # 🖼️ UI Asset Creation Pipeline
@@ -830,6 +845,58 @@ def create_ui_border_assets(assets_state):
     assets_state["ui_assets"]["border_pieces"] = border_pieces
     if DEBUG: print(f"[assets] ✅ Created 9 UI border pieces.")
 
+def load_button_assets(assets_state):
+    """
+    Loads all UI buttons from subdirectories. Each subdirectory in the buttons
+    folder is treated as a unique button, containing its state images.
+    """
+    # 🎨 Config & Constants
+    UI_BUTTON_PATH = "sprites/ui/buttons"
+    BUTTON_SCALE_FACTOR = 0.8 # 1.0 means no scaling
+
+    # ✨ Asset Loading & Processing
+    button_assets = {}
+
+    # Check if the main button directory exists
+    if not os.path.isdir(UI_BUTTON_PATH):
+        if DEBUG: print(f"[assets] ⚠️  Button directory not found, skipping: {UI_BUTTON_PATH}")
+        return
+
+    # Iterate through each subdirectory in the main buttons folder
+    # Each subdirectory represents one button (e.g., "save_map")
+    for button_name in os.listdir(UI_BUTTON_PATH):
+        button_folder_path = os.path.join(UI_BUTTON_PATH, button_name)
+
+        # Ensure it's actually a directory
+        if os.path.isdir(button_folder_path):
+            # Create a dictionary to hold this button's states
+            button_assets[button_name] = {}
+
+            # Iterate through the files inside the button's personal folder
+            # Each file represents a state (e.g., "normal.png")
+            for filename in os.listdir(button_folder_path):
+                if not filename.endswith(".png"):
+                    continue
+
+                # The state is the filename without the extension
+                state = filename.replace('.png', '')
+
+                # Load the image
+                full_path = os.path.join(button_folder_path, filename)
+                sprite = pygame.image.load(full_path).convert_alpha()
+
+                # Apply scaling if needed
+                if BUTTON_SCALE_FACTOR != 1.0:
+                    w, h = sprite.get_size()
+                    sprite = pygame.transform.smoothscale(sprite, (int(w * BUTTON_SCALE_FACTOR), int(h * BUTTON_SCALE_FACTOR)))
+
+                # Store the final sprite in the dictionary under its state
+                button_assets[button_name][state] = sprite
+    
+    # Add the organized button assets to the main assets_state dictionary
+    assets_state["ui_assets"]["buttons"] = button_assets
+    print(f"[assets] ✅ Loaded {len(button_assets)} button types from the UI folder.")
+
 def load_all_ui_assets(assets_state):
     """Orchestrator to run the entire UI asset creation pipeline."""
     assets_state["ui_assets"] = {}
@@ -837,4 +904,5 @@ def load_all_ui_assets(assets_state):
     
     load_ui_texture(assets_state, ui_path)
     create_grayscale_ui_texture(assets_state)
-    create_ui_border_assets(assets_state) # this is what we're designing now
+    create_ui_border_assets(assets_state)
+    load_button_assets(assets_state)

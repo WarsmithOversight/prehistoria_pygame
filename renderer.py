@@ -332,18 +332,24 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     
     # Check for movement overlay glow
     if getattr(drawable, 'movement_overlay', False):
-        color_key = getattr(drawable, 'move_color', 'good')
-        
-        tinted_glows_by_color = assets_state.get("tinted_glows", {})
-        masks_for_this_color = tinted_glows_by_color.get(color_key)
-        
-        if masks_for_this_color:
-            final_glow = masks_for_this_color.get(current_zoom)
-            if final_glow:
-                off_x, off_y = persistent_state["pers_asset_blit_offset"]
-                ox = int(off_x * current_zoom)
-                oy = int(off_y * current_zoom)
-                screen.blit(final_glow, (px + ox, py + oy))
+    # ---  LAYER 1: Draw the Primary Movement Overlay ---
+    
+        primary_color_key = getattr(drawable, 'primary_move_color', None)
+        if primary_color_key:
+            glow_mask = assets_state.get("tinted_glows", {}).get(primary_color_key)
+            if glow_mask:
+                final_glow = glow_mask.get(current_zoom)
+                if final_glow:
+                    screen.blit(final_glow, (px + ox, py + oy))
+
+        # --- LAYER 2: Draw the Secondary Overlay on top ---
+        secondary_color_key = getattr(drawable, 'secondary_move_color', None)
+        if secondary_color_key:
+            glow_mask = assets_state.get("tinted_glows", {}).get(secondary_color_key)
+            if glow_mask:
+                final_glow = glow_mask.get(current_zoom)
+                if final_glow:
+                    screen.blit(final_glow, (px + ox, py + oy))
 
     # 🧠 Delegate to the Tilebox interpreter if the tilebox contains anything
     if hasattr(drawable, 'tilebox') and drawable.tilebox:
