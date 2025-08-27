@@ -4,6 +4,7 @@
 import pygame
 import os
 import math
+import random
 
 DEBUG = True
 
@@ -32,230 +33,217 @@ class BasePanel:
                 "z": z_formula(0) # UI z-value doesn't depend on row
             }
 
-# ──────────────────────────────────────────────────
-# 🎨 UI Panel Helpers
-# ──────────────────────────────────────────────────
+# 🎨 Config & Constants
+RAW_SQUIGGLE_ANCHOR_INSET = 2.0  # The "spine" of the wave, main artistic control
+SECONDARY_AMPLITUDE_FACTOR = 0.4 # Secondary wave is 40% of the primary's amplitude
+PRIMARY_FREQ_RANGE = (1.5, 2.0)  # Slower, wider waves
+SECONDARY_FREQ_RANGE = (4.0, 6.0) # Faster, smaller waves
+SEGMENTS_PER_TILE = 10           # Controls curve smoothness
 
-def background_panel_helper(target_surface, assets_state):
-    """Fills a surface with a solid color and a tiled watermark texture."""
-    # Define background appearance
+def _generate_squiggly_points(start_pos, end_pos, segments, primary_amplitude):
+    """Generates a list of points for a single squiggly line with randomized compound waves."""
+    points = []
+    secondary_amplitude = primary_amplitude * SECONDARY_AMPLITUDE_FACTOR
+    freq1 = random.uniform(*PRIMARY_FREQ_RANGE)
+    freq2 = random.uniform(*SECONDARY_FREQ_RANGE)
+    phase1 = random.uniform(0, 2 * math.pi)
+    phase2 = random.uniform(0, 2 * math.pi)
+    is_horizontal = abs(start_pos[1] - end_pos[1]) < abs(start_pos[0] - end_pos[0])
+    
+    for i in range(segments + 1):
+        t = i / segments
+        x = start_pos[0] + t * (end_pos[0] - start_pos[0])
+        y = start_pos[1] + t * (end_pos[1] - start_pos[1])
+        undulation1 = primary_amplitude * math.sin(t * freq1 * math.pi + phase1)
+        undulation2 = secondary_amplitude * math.sin(t * freq2 * math.pi + phase2)
+        fade_factor = math.sin(t * math.pi)
+        total_undulation = (undulation1 + undulation2) * fade_factor
+        if is_horizontal:
+            points.append((x, y + total_undulation))
+        else:
+            points.append((x + total_undulation, y))
+    return points
+
+def create_organic_panel_edge(length, orientation, tile_sequence, assets_state):
+    """Creates a single, processed, wavy edge surface for any side."""
+    border_pieces = assets_state["ui_assets"].get("border_pieces")
+    if not border_pieces: return pygame.Surface((32, 32), pygame.SRCALPHA)
+    
+    tile_dim = border_pieces['1'].get_width()
+    BORDER_THICKNESS = tile_dim
+    SAFE_ZONE = tile_dim * 1
+    
+    primary_amp = RAW_SQUIGGLE_ANCHOR_INSET
+    secondary_amp = primary_amp * SECONDARY_AMPLITUDE_FACTOR
+    FINAL_INSET = math.ceil(primary_amp + secondary_amp)
+    
+    action_zone_length = length - (SAFE_ZONE * 2)
+    num_tiles = action_zone_length / tile_dim
+    SEGMENTS = int(num_tiles * SEGMENTS_PER_TILE)
+
+    if orientation == 'horizontal':
+        width, height = length, BORDER_THICKNESS
+    else:
+        width, height = BORDER_THICKNESS, length
+
+    strip_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    for i in range(length // tile_dim + 1):
+        tile_key = tile_sequence[i % len(tile_sequence)]
+        if orientation == 'horizontal':
+            strip_surface.blit(border_pieces[tile_key], (i * tile_dim, 0))
+        else:
+            strip_surface.blit(border_pieces[tile_key], (0, i * tile_dim))
+
+    if orientation == 'horizontal':
+        line1_squiggle = _generate_squiggly_points((SAFE_ZONE, FINAL_INSET), (width - SAFE_ZONE, FINAL_INSET), SEGMENTS, primary_amp)
+        line2_squiggle = _generate_squiggly_points((SAFE_ZONE, height - FINAL_INSET), (width - SAFE_ZONE, height - FINAL_INSET), SEGMENTS, primary_amp)
+        mask_points = [(0, 0), (SAFE_ZONE, 0), *line1_squiggle, (width - SAFE_ZONE, 0), (width, 0), (width, height), 
+                       (width - SAFE_ZONE, height), *reversed(line2_squiggle), (SAFE_ZONE, height), (0, height)]
+    else:
+        line1_squiggle = _generate_squiggly_points((FINAL_INSET, SAFE_ZONE), (FINAL_INSET, height - SAFE_ZONE), SEGMENTS, primary_amp)
+        line2_squiggle = _generate_squiggly_points((width - FINAL_INSET, SAFE_ZONE), (width - FINAL_INSET, height - SAFE_ZONE), SEGMENTS, primary_amp)
+        mask_points = [(0, 0), (0, SAFE_ZONE), *line1_squiggle, (0, height - SAFE_ZONE), (0, height), (width, height), 
+                       (width, height - SAFE_ZONE), *reversed(line2_squiggle), (width, SAFE_ZONE), (width, 0)]
+    
+    mask_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.polygon(mask_surface, (255, 255, 255), mask_points)
+    strip_surface.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return strip_surface
+
+def _carve_corners_geometrically(frame_surface, assets_state):
+    """
+    Carves the panel corners by creating a perfect radial band, precisely
+    matching the user's compass and paper cutout analogy.
+    """
+    # ⚙️ Geometry Setup from Your Diagrams
+    border_pieces = assets_state["ui_assets"].get("border_pieces", {})
+    if not border_pieces: return frame_surface
+
+    tile_dim = border_pieces['1'].get_width()
+    width, height = frame_surface.get_size()
+
+    # Calculate the inset distance, which defines where the edges meet the corner
+    primary_amp = RAW_SQUIGGLE_ANCHOR_INSET
+    secondary_amp = primary_amp * SECONDARY_AMPLITUDE_FACTOR
+    final_inset = primary_amp + secondary_amp # Use the precise float value
+
+    # The distance from the pivot to the inner (blue) points
+    inner_radius = final_inset
+    
+    # The distance from the pivot to the outer (yellow) points
+    outer_radius = tile_dim - final_inset
+
+    # The locations of the four pivots, set 1px outside the corner tile
+    pivot_points = {
+        "top_left": (tile_dim + 1, tile_dim + 1),
+        "top_right": (width - tile_dim - 1, tile_dim + 1),
+        "bottom_left": (tile_dim + 1, height - tile_dim - 1),
+        "bottom_right": (width - tile_dim - 1, height - tile_dim - 1)
+    }
+    
+    # The bounding box for each corner's pixel region to optimize the process
+    corner_regions = {
+        "top_left": pygame.Rect(0, 0, tile_dim, tile_dim),
+        "top_right": pygame.Rect(width - tile_dim, 0, tile_dim, tile_dim),
+        "bottom_left": pygame.Rect(0, height - tile_dim, tile_dim, tile_dim),
+        "bottom_right": pygame.Rect(width - tile_dim, height - tile_dim, tile_dim, tile_dim)
+    }
+
+    # ──────────────────────────────────────────────────
+    # ✍️ Carve the Band
+    # ──────────────────────────────────────────────────
+    for name, rect in corner_regions.items():
+        center_x, center_y = pivot_points[name]
+        
+        # Iterate over every pixel only within this corner's bounding box
+        for x in range(rect.left, rect.right):
+            for y in range(rect.top, rect.bottom):
+                # Measure distance from the pixel to the pivot point
+                dist = math.hypot(x - center_x, y - center_y)
+                # Keep the pixel ONLY if its distance is between the inner and outer radii
+                is_in_band = inner_radius <= dist <= outer_radius
+                
+                if not is_in_band:
+                    frame_surface.set_at((x, y), (0, 0, 0, 0))
+                        
+    return frame_surface
+
+def background_panel_helper(width, height, assets_state):
+    """Creates the base panel surface, including a centered, tiled watermark background."""
+    
+    # 🎨 Config & Constants
     BACKGROUND_COLOR = (20, 20, 20)
-    WATERMARK_ALPHA = 10
+    WATERMARK_ALPHA = 5
 
-    # Fill with the solid color
-    target_surface.fill(BACKGROUND_COLOR)
+    # ⚙️ Calculate BG dimensions based on final panel size
+    border_pieces = assets_state["ui_assets"].get("border_pieces", {})
+    tile_dim = border_pieces['1'].get_width() if border_pieces else 32
+    padding = tile_dim / 2
+    bg_width = int(width - (padding * 2))
+    bg_height = int(height - (padding * 2))
 
-    # Get the watermark texture
+    # 🖼️ Create  the oversized final surface
+    panel_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    
+    # 🏞️ Create the smaller, tiled background texture
+    tiled_background = pygame.Surface((bg_width, bg_height), pygame.SRCALPHA)
+    tiled_background.fill(BACKGROUND_COLOR)
     watermark = assets_state["ui_assets"].get("background_watermark")
     if watermark:
         watermark.set_alpha(WATERMARK_ALPHA)
         tex_w, tex_h = watermark.get_size()
-        # Tile the watermark across the entire surface
-        for x in range(0, target_surface.get_width(), tex_w):
-            for y in range(0, target_surface.get_height(), tex_h):
-                target_surface.blit(watermark, (x, y))
+        for x in range(0, bg_width, tex_w):
+            for y in range(0, bg_height, tex_h):
+                tiled_background.blit(watermark, (x, y))
 
-def panel_border_helper(target_surface, assets_state):
-    """
-    Draws the seamless 9-slice border onto the target surface using a 
-    repeating 3-tile pattern for each edge.
-    """
-    # 🎨 Asset & Dimension Setup
-    border_pieces = assets_state["ui_assets"].get("border_pieces")
-    if not border_pieces: return
-
-    # Get dimensions and the size of a single tile
-    panel_w, panel_h = target_surface.get_size()
-    tile_step = border_pieces['1'].get_width()
-
-    # Define the repeating tile sequences for each edge
-    top_sequence = ['1', '2', '3']
-    left_sequence = ['1', '4', '7']
-    right_sequence = ['3', '6', '9']
-    bottom_sequence = ['7', '8', '9']
+    # 📍 Blit the tiled texture into the center of the main panel
+    blit_x = (width - bg_width) / 2
+    blit_y = (height - bg_height) / 2
+    panel_surface.blit(tiled_background, (blit_x, blit_y))
     
-    # ✍️ Border Drawing Logic
-    # Draw Top & Bottom Edges
-    # Iterate across the width of the panel, tile by tile.
-    for x in range(0, panel_w, tile_step):
-        # Determine which of the three tiles in the sequence to use
-        tile_index = (x // tile_step) % 3
-        
-        # Blit the top edge tile
-        top_tile_key = top_sequence[tile_index]
-        target_surface.blit(border_pieces[top_tile_key], (x, 0))
-        
-        # Blit the bottom edge tile
-        bottom_tile_key = bottom_sequence[tile_index]
-        target_surface.blit(border_pieces[bottom_tile_key], (x, panel_h - tile_step))
-
-    # Draw Left & Right Edges
-    # Iterate down the height of the panel, tile by tile.
-    # This loop re-blits the corners to keep the code clean and simple.
-    for y in range(0, panel_h, tile_step):
-        # Determine which of the three tiles in the sequence to use
-        tile_index = (y // tile_step) % 3
-        
-        # Blit the left edge tile
-        left_tile_key = left_sequence[tile_index]
-        target_surface.blit(border_pieces[left_tile_key], (0, y))
-
-        # Blit the right edge tile
-        right_tile_key = right_sequence[tile_index]
-        target_surface.blit(border_pieces[right_tile_key], (panel_w - tile_step, y))
-
-def generate_undulating_poly(rect, segments_per_side, max_displacement):
-    """
-    Takes a pygame.Rect and returns a list of points for an undulating polygon.
-
-    - rect: The base rectangle for the polygon.
-    - segments_per_side: How many points to generate along each edge.
-    - max_displacement: The maximum number of pixels a point can be shifted.
-    """
-    points = []
-    
-    # Use a shared random phase for all sides to create a continuous wave feel
-    phase_x = random.uniform(0, 2 * math.pi)
-    phase_y = random.uniform(0, 2 * math.pi)
-    
-    # 🏞️ Process Top, Right, Bottom, Left edges in order
-    # Top Edge (Left to Right)
-    for i in range(segments_per_side):
-        t = i / segments_per_side
-        x = rect.left + t * rect.width
-        y = rect.top
-        # Displace vertically (y-axis)
-        displacement = max_displacement * math.sin(t * 3 * math.pi + phase_x)
-        points.append((x, y + displacement))
-
-    # Right Edge (Top to Bottom)
-    for i in range(segments_per_side):
-        t = i / segments_per_side
-        x = rect.right
-        y = rect.top + t * rect.height
-        # Displace horizontally (x-axis)
-        displacement = max_displacement * math.sin(t * 3 * math.pi + phase_y)
-        points.append((x + displacement, y))
-
-    # Bottom Edge (Right to Left)
-    for i in range(segments_per_side):
-        t = i / segments_per_side
-        x = rect.right - t * rect.width
-        y = rect.bottom
-        # Displace vertically (y-axis)
-        displacement = max_displacement * math.sin(t * 3 * math.pi + phase_x)
-        points.append((x, y + displacement))
-
-    # Left Edge (Bottom to Top)
-    for i in range(segments_per_side):
-        t = i / segments_per_side
-        x = rect.left
-        y = rect.bottom - t * rect.height
-        # Displace horizontally (x-axis)
-        displacement = max_displacement * math.sin(t * 3 * math.pi + phase_y)
-        points.append((x + displacement, y))
-        
-    return points
-
-
-def assemble_ui_panel(width, height, assets_state):
-    """Orchestrator that builds and returns a complete UI panel surface."""
-    border_pieces = assets_state["ui_assets"].get("border_pieces")
-    if not border_pieces: 
-        return pygame.Surface((width, height), pygame.SRCALPHA)
-    
-    # Get the tile size from the first piece.
-    tile_step = border_pieces['1'].get_width()
-    
-    # The seamless pattern repeats every 3 tiles.
-    pattern_size = tile_step * 3
-
-    # Round the desired dimensions UP to the nearest multiple of the 3-tile pattern size.
-    # This ensures the border always ends perfectly on tiles '3', '7', and '9'.
-    final_width = math.ceil(width / pattern_size) * pattern_size
-    final_height = math.ceil(height / pattern_size) * pattern_size
-    
-    # Ensure the final dimensions are at least one full pattern size.
-    # This prevents a crash from pygame.Surface((0, N)) if the requested width/height is 0.
-    if final_width == 0: final_width = pattern_size
-    if final_height == 0: final_height = pattern_size
-
-    # Create the final surface with the corrected dimensions.
-    panel_surface = pygame.Surface((final_width, final_height), pygame.SRCALPHA)
-
-    # Call the helpers to draw the components onto the surface.
-    background_panel_helper(panel_surface, assets_state)
-    panel_border_helper(panel_surface, assets_state)
-
     return panel_surface
+
+def assemble_organic_panel(width, height, assets_state):
+    """Orchestrator that builds a complete panel with a procedural organic border."""
+
+    # 1. Create the oversized background surface first.
+    final_panel = background_panel_helper(width, height, assets_state)
+
+    # 2. Assemble the four edge pieces on a separate, temporary surface.
+    frame_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    top_edge = create_organic_panel_edge(width, 'horizontal', ['1', '2', '3'], assets_state)
+    bottom_edge = create_organic_panel_edge(width, 'horizontal', ['7', '8', '9'], assets_state)
+    left_edge = create_organic_panel_edge(height, 'vertical', ['1', '4', '7'], assets_state)
+    right_edge = create_organic_panel_edge(height, 'vertical', ['3', '6', '9'], assets_state)
+
+    frame_surface.blit(top_edge, (0, 0))
+    frame_surface.blit(left_edge, (0, 0))
+    frame_surface.blit(right_edge, (width - right_edge.get_width(), 0))
+    frame_surface.blit(bottom_edge, (0, height - bottom_edge.get_height()))
+
+    # 3. Carve the corners of the assembled frame.
+    frame_surface = _carve_corners_geometrically(frame_surface, assets_state)
+
+    # 4. Blit the finished frame onto the background.
+    final_panel.blit(frame_surface, (0,0))
+    
+    return final_panel
 
 # ──────────────────────────────────────────────────
 # 🧪 Test Panel Implementation
 # ──────────────────────────────────────────────────
 
-class TestPanel(BasePanel):
-    """A specific panel that uses the assembly helpers to build itself."""
+class RightTestPanel(BasePanel):
+    """A new panel on the right, now using the full organic assembly."""
     def __init__(self, persistent_state, assets_state):
         super().__init__(persistent_state, assets_state)
-        self.drawable_key = "ui_panel_test"
-
-        # ⚙️ Define the panel's desired size and position
-        desired_width = 350
-        desired_height = 400
-        
-        # Call the orchestrator to get the final, correctly sized panel surface
-        self.surface = assemble_ui_panel(desired_width, desired_height, assets_state)
-        
-        # Define the panel's screen position
+        self.drawable_key = "ui_panel_right_test"
+        width, height = 400, 450
+        self.surface = assemble_organic_panel(width, height, assets_state)
         screen = self.persistent_state["pers_screen"]
-        _, screen_height = screen.get_size()
-        panel_x = 20
-        panel_y = (screen_height - self.surface.get_height()) / 2
-        self.rect = self.surface.get_rect(topleft=(panel_x, panel_y))
-
-    def update(self, notebook):
-        """Publishes the main panel and its border assets (for debugging) to the notebook."""
-        # First, publish the main panel as usual
-        if self.surface and self.rect and self.drawable_key:
-            z_formula = self.persistent_state["pers_z_formulas"]["ui_panel"]
-            notebook[self.drawable_key] = {
-                "type": "ui_panel",
-                "surface": self.surface,
-                "rect": self.rect,
-                "z": z_formula(0)
-            }
-
-        # 🐞 Blit individual border assets next to the panel for debugging
-        border_pieces = self.assets_state["ui_assets"].get("border_pieces")
-        if DEBUG and border_pieces:
-            # Get the z-value for UI elements so they draw on top
-            z_value = self.persistent_state["pers_z_formulas"]["ui_panel"](0) + 0.1
-            
-            # Define a starting position for our debug grid (to the right of the panel)
-            start_x = self.rect.right + 20
-            current_x = start_x
-            current_y = self.rect.top
-            
-            # Loop through each of the 8 border pieces
-            for name, piece_surface in border_pieces.items():
-                # Create a unique key for the notebook
-                debug_key = f"debug_border_{name}"
-                piece_rect = piece_surface.get_rect(topleft=(current_x, current_y))
-                
-                # Add the piece to the notebook to be drawn by the renderer
-                notebook[debug_key] = {
-                    "type": "ui_panel", # Reuse the existing ui_panel interpreter
-                    "surface": piece_surface,
-                    "rect": piece_rect,
-                    "z": z_value
-                }
-                
-                # Move to the next position in our grid
-                current_x += piece_surface.get_width() + 5
-                # Wrap to the next row if we go too far across the screen
-                if current_x > start_x + 100:
-                    current_x = start_x
-                    current_y += piece_surface.get_height() + 5
+        screen_width, _ = screen.get_size()
+        panel_x = screen_width - self.surface.get_width() - 20
+        self.rect = self.surface.get_rect(topleft=(panel_x, 50))
 
 # ──────────────────────────────────────────────────
 # ⚙️ UI Orchestrator
@@ -267,15 +255,11 @@ class UIManager:
         self.persistent_state = persistent_state
         self.assets_state = assets_state
         self.panels = {}
-
-        # Create and store an instance of our test panel
-        self.panels["test_panel"] = TestPanel(persistent_state, assets_state)
+        self.panels["right_test_panel"] = RightTestPanel(persistent_state, assets_state)
         if DEBUG:
-            print(f"[UIManager] ✅ Test panel class instantiated.")
+            print(f"[UIManager] ✅ All test panels instantiated.")
 
     def update(self, notebook):
         """Updates all active panels, causing them to publish to the notebook."""
         for panel in self.panels.values():
             panel.update(notebook)
-
-

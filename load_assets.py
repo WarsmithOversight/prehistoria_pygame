@@ -766,7 +766,7 @@ def create_tinted_glow_masks(persistent_state, assets_state):
 GRAYSCALE_TEXTURE_SIZE = (256, 256) # The scale of the repeating background pattern
 
 # Constants for creating the 9-slice border assets
-FINAL_BORDER_WIDTH = 50 # The final width and height of each border piece in pixels
+FINAL_BORDER_WIDTH = 12 # The final width and height of each border piece in pixels
 
 # ──────────────────────────────────────────────────
 # 🖼️ UI Asset Creation Pipeline
