@@ -24,27 +24,23 @@ class UIWelcomePanel(BasePanel):
             "welcome_text": {
                 "type": "text_block",
                 "content": (
-                    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi in auctor enim. "
-                    "Nunc ac urna sodales, fermentum turpis a, feugiat tellus. Mauris ultricies ut "
-                    "lectus ut ultricies. Maecenas in semper neque. Lorem ipsum dolor sit amet, "
-                    "consectetur adipiscing elit. Phasellus vulputate sed ante vitae vestibulum. Sed "
-                    "vitae imperdiet ipsum, vel pulvinar purus. Integer auctor tellus eget commodo "
-                    "consectetur. Duis at imperdiet massa, nec interdum neque. Sed facilisis sit amet "
-                    "ligula sit amet dignissim. Cras quis interdum nulla. Curabitur quis est eget "
-                    "nunc tincidunt pellentesque. Vivamus molestie nisl lobortis dignissim eleifend. "
-                    "Aenean pretium dui vel tincidunt laoreet.\n\n"
-                    "Nam maximus efficitur iaculis. Donec ipsum erat, euismod eu rutrum sed, "
-                    "imperdiet et risus. Phasellus efficitur vitae risus ac pellentesque. Aenean "
-                    "finibus porttitor ligula in rhoncus. Mauris quis libero nulla. Proin a orci "
-                    "risus. Phasellus ultricies at odio hendrerit aliquet. Mauris laoreet nibh odio, "
-                    "quis ullamcorper nisi rutrum quis.\n\n"
-                    "Praesent pulvinar magna eget felis bibendum suscipit. Morbi a ante felis. Sed eu "
-                    "lectus dolor. Fusce tempus dui vel libero egestas aliquet. Cras at ex efficitur, "
-                    "porttitor arcu non, vehicula quam. Mauris massa nisi, tempor ut condimentum vel, "
-                    "laoreet sed mauris. Vestibulum congue lacus eu nulla efficitur, vitae elementum "
-                    "nunc sodales. Nullam a nunc vitae nibh ultricies tempor eget non sapien. Nulla "
-                    "vel diam vitae nunc accumsan rutrum id eu mauris. Pellentesque nisl orci, porta "
-                    "non facilisis iaculis, tristique vel ipsum."                ),
+                    "The Triassic: After the Great Dying\n"
+                    "\n"
+                    "The world has just come through its darkest hour. In the Great Dying at the end of the Permian, "
+                    "most life vanished—reefs collapsed, forests thinned to scrubs, and even the wind seemed empty. "
+                    "What remains is a single supercontinent, Pangea, stitched from pole to pole. Its heart is dry and harsh; "
+                    "heat shimmers over inland deserts and salt pans. Along the margins, summer monsoons build rivers that braid "
+                    "through broad floodplains, dropping copper silt and carving new valleys. Conifers, cycads, and ginkgos re-root "
+                    "the land; ferns and horsetails lace the wetlands where they can.\n"
+                    "\n"
+                    "Across this sparse stage, evolution gets ambitious. Survivors—beaked dicynodonts and nimble cynodonts—share "
+                    "the ground with a rising archosaur clan. Croc-line hunters prowl the riverbanks; armored aetosaurs nose through "
+                    "scrub; pterosaurs test the air. Small, fleet dinosaurs appear late, more rumor than empire, while in the seas "
+                    "ammonites coil back and ichthyosaurs cut the shallows. It is an age of experiments: new gaits, new lungs, new "
+                    "ways to bite and breathe, all shaped by drought and sudden rain.\n"
+                    "\n"
+                    "Welcome to the Triassic—lean, volatile, and inventive. Here, the blueprints of the future are drafted in bone and storm."
+                ),
                 "style": {"font_size_key": "regular_medium", "text_color": (220, 220, 220), "align": "justify"},
                 "properties": {"max_width": 550}
             },

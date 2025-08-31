@@ -35,21 +35,32 @@ DEV_FADE_IN_DURATION = 1.5   # seconds
 class SceneManager:
     """Orchestrates scene flow using a tween-based fading system."""
     def __init__(self, persistent_state, assets_state, variable_state, notebook, tween_manager):
+        
+        # Stores references to global game state objects
         self.persistent_state = persistent_state
         self.assets_state = assets_state
         self.variable_state = variable_state
         self.notebook = notebook
         self.tween_manager = tween_manager
+
+        # Sets the main game loop flag to True
         self.running = True
+
+        # A flag to prevent multiple scene transitions at once
         self.is_transitioning = False
 
+        # Initializes all scenes and stores them in a dictionary
         self.scenes = {
             "MAIN_MENU": MainMenuScene(self),
             "LOADING": LoadingScene(self),
             "IN_GAME": InGameScene(self)
         }
+
+        # Sets the initial active scene
         self.active_scene_key = "MAIN_MENU"
         self.active_scene = self.scenes[self.active_scene_key]
+
+        # Calls the on_enter method for the first scene
         self.active_scene.on_enter()
 
        # Kick off the initial fade-in for the very first scene.
@@ -62,21 +73,35 @@ class SceneManager:
        )
 
     def change_scene(self, new_scene_key, data=None, fade_out_duration=DEV_FADE_OUT_DURATION, fade_in_duration=DEV_FADE_IN_DURATION, on_fade_in_complete=None):
+        '''When called, fades out, starts the next scene, and fades it in'''
+        # Prevents a new transition if one is already in progress
         if self.is_transitioning: return
+
+        # Sets the flag to indicate a transition is starting
         self.is_transitioning = True
 
         def on_fade_out_complete():
+            # Exits the current scene
             self.active_scene.on_exit()
+
+            # Updates the active scene to the new one
             self.active_scene_key = new_scene_key
             self.active_scene = self.scenes[new_scene_key]
+
+            # Enters the new scene
             self.active_scene.on_enter(data)
 
-            # This part is new: create the fade-in tween
+            # Create the fade-in tween
             def on_final_transition_complete():
+
+                # Resets the transition flag when the final fade-in is done
                 self.is_transitioning = False
+
+                # Calls the optional callback function if provided
                 if on_fade_in_complete:
                     on_fade_in_complete()
 
+            # Starts the fade-in animation
             self.tween_manager.add_tween(
                 target_dict=self.notebook['FADE'],
                 animation_type='fade',
@@ -84,6 +109,8 @@ class SceneManager:
                 on_complete=on_final_transition_complete
             )
 
+
+        # Starts the initial fade-out animation
         self.tween_manager.add_tween(
             target_dict=self.notebook['FADE'],
             animation_type='fade',
@@ -91,13 +118,18 @@ class SceneManager:
             on_complete=on_fade_out_complete
         )
 
-    def handle_events(self, events, mouse_pos):
-        self.active_scene.handle_events(events, mouse_pos)
-    def update(self, dt):
-        self.active_scene.update(dt)
-    def quit_game(self):
-        self.running = False
 
+    def handle_events(self, events, mouse_pos):
+        '''Delegates event handling to the active scene'''
+        self.active_scene.handle_events(events, mouse_pos)
+
+    def update(self, dt):
+        '''Delegates the update call to the active scene'''
+        self.active_scene.update(dt)
+
+    def quit_game(self):
+        '''Sets the running flag to False to exit the main game loop'''
+        self.running = False
 
 # ──────────────────────────────────────────────────
 # 🏛️ Main Menu Scene
@@ -105,27 +137,43 @@ class SceneManager:
 
 class MainMenuScene:
     def __init__(self, manager):
+
+        # Stores a reference to the scene manager and global state objects
         self.manager = manager; self.persistent_state = manager.persistent_state
         self.assets_state = manager.assets_state; self.notebook = manager.notebook
+        
+        # Initializes the main menu panel to None
         self.main_menu_panel = None
 
     def on_enter(self, data=None):
+        '''Called at the end of SceneManager init.'''
+
+        # Loads all UI assets from disk
         load_all_ui_assets(self.assets_state)
+
+        # Creates an instance of the MainMenuPanel
         self.main_menu_panel = MainMenuPanel(self.persistent_state, self.assets_state, self)
+        
+        # Gets the screen dimensions
         screen_w, screen_h = self.persistent_state["pers_screen"].get_size()
+        
+        # Gets the panel's rect and centers it on the screen
         panel_rect = self.main_menu_panel.rect
         panel_rect.center = (screen_w / 2, screen_h / 2)
         self.main_menu_panel.rect = panel_rect
 
     def on_exit(self):
+        '''Cleans up the main menu panel from the notebook'''
         if self.main_menu_panel and self.main_menu_panel.drawable_key in self.notebook:
             del self.notebook[self.main_menu_panel.drawable_key]
 
     def handle_events(self, events, mouse_pos):
+        '''Delegates event handling to the menu panel if it exists and a transition isn't happening'''
         if self.main_menu_panel and not self.manager.is_transitioning:
             self.main_menu_panel.handle_events(events, mouse_pos)
 
     def update(self, dt):
+        '''Delegates the update call to the menu panel if it exists'''
         if self.main_menu_panel:
             self.main_menu_panel.update(self.notebook)
 
@@ -158,24 +206,40 @@ class LoadingScene:
             self.manager.change_scene("IN_GAME")
     
     def on_enter(self, data=None):
+
+        # Resets the loading flag
         self.has_started_loading = False
+
+        # Creates a black surface for the splash screen
         screen = self.persistent_state["pers_screen"]
         splash_surface = pygame.Surface(screen.get_size())
         splash_surface.fill((0, 0, 0))
         try:
+
             # 🖼️ Load and Scale the Logo
+            # Loads the splash screen image
             splash_image = pygame.image.load("splash.png").convert_alpha()
+            
             # Define how wide the logo should be as a ratio of screen width.
             LOGO_WIDTH_RATIO = 0.5
             
-            # Calculate target dimensions while preserving aspect ratio.
+            # Gets the original image dimensions
             original_w, original_h = splash_image.get_size()
+            
+            # Calculates the new width based on the screen size ratio
             target_w = int(screen.get_width() * LOGO_WIDTH_RATIO)
+            
+            # Calculates the aspect ratio and new height
             aspect_ratio = original_h / original_w
             target_h = int(target_w * aspect_ratio)
             
+            # Scales the logo smoothly to the new dimensions
             scaled_logo = pygame.transform.smoothscale(splash_image, (target_w, target_h))
+            
+            # Gets the rectangle for the scaled logo and centers it
             splash_rect = scaled_logo.get_rect(center=screen.get_rect().center)
+            
+            # Blits the scaled logo onto the splash surface
             splash_surface.blit(scaled_logo, splash_rect)        
         
         except pygame.error: pass
@@ -354,12 +418,19 @@ class MainMenuPanel(BasePanel):
                 "text_options": ["Load Saved World"],
                 "style": {"font_size_key": "regular_large", "text_color": (150, 150, 150), "align": "center"},
                 "action": self.on_load_world
+            },
+            "dev_quickboot": {
+                "type": "button", # Add the type definition
+                "text_options": ["Dev Quickboot"],
+                "style": {"font_size_key": "regular_large", "text_color": (255, 255, 255), "align": "center"},
+                "action": self.on_dev_quickboot
             }
         }
         # ✨ NEW: Define a proper layout blueprint, just like the Welcome Panel
         self.layout_blueprint = [
             {"id": "new_world"},
-            {"id": "load_world"}
+            {"id": "load_world"},
+            {"id": "dev_quickboot"}
         ]
         self.dims = get_panel_dimensions(self.button_definitions, self.layout_blueprint, self.assets_state)
         self.surface = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)
@@ -407,6 +478,33 @@ class MainMenuPanel(BasePanel):
     def on_load_world(self):
         if DEBUG: print("[MainMenu] ⚠️ 'Load Saved World' is not yet implemented.")
     
+    def on_dev_quickboot(self):
+        persistent_state = self.scene.manager.persistent_state
+        variable_state = self.scene.manager.variable_state
+
+        persistent_state["pers_dev_quickboot"] = True
+        persistent_state["pers_quickboot_zoom"] = 0.40
+
+        # Make the zoom config a single legal step.
+        persistent_state["pers_zoom_config"] = {
+            "min_zoom": persistent_state["pers_quickboot_zoom"],
+            "max_zoom": persistent_state["pers_quickboot_zoom"],
+            "zoom_interval": 1.0,      # any value; snapping will clamp to min/max anyway
+            "settle_ms": 0
+        }
+
+        # Seed current zoom to the fixed value (so first render is correct)
+        variable_state["var_current_zoom"] = persistent_state["pers_quickboot_zoom"]
+
+        # Proceed exactly like "New World" (or your prefab path—your choice)
+        loading_scene = self.scene.manager.scenes["LOADING"]
+        
+        # Tell the manager to change scenes, and to call start_load_process when the fade-in is done.
+        self.scene.manager.change_scene(
+            "LOADING",
+            on_fade_in_complete=loading_scene.start_load_process
+        )
+
     def handle_events(self, events, mouse_pos):
         local_mouse_pos = (mouse_pos[0] - self.rect.left, mouse_pos[1] - self.rect.top)
         for element in self.elements: element.handle_events(events, local_mouse_pos)

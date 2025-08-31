@@ -418,13 +418,20 @@ def get_point_on_bezier_curve(p0, p1, p2, t):
 
 def build_zoom_steps(zoom_config):
     min_zoom, max_zoom, step = zoom_config["min_zoom"], zoom_config["max_zoom"], zoom_config["zoom_interval"]
+    
+    # add if-clause for dev quickboot
+    if abs(max_zoom - min_zoom) < 1e-9:
+        # Dev quickboot or hard-locked zoom: exactly one step
+        return [round(min_zoom, 2)]
+    
     steps = []
     z = min_zoom
     while z <= max_zoom + 1e-9:
-        snapped = round(z / step) * step
-        steps.append(snapped)
         steps.append(round(z, 2))
         z += step
+
+    # Ensure uniqueness & ascending order
+    steps = sorted(set(steps))
     return steps
 
 def snap_zoom_to_nearest_step(persistent_state, variable_state):

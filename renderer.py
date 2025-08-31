@@ -232,7 +232,7 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     # 🌊 Blit Overlays (Coast, River, etc.)
     # Render coastline if the tile has a `has_shoreline` tag
 
-# TODO review: Tint shorelines based on edge-sharing terrain type.
+# [ ] TODO review: Tint shorelines based on edge-sharing terrain type.
 
     if hasattr(drawable, 'has_shoreline'):
         # has_shoreline = drawable.has_shoreline old code

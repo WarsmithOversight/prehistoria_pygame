@@ -95,7 +95,8 @@ class Tween:
         self.updater = updater
         
         # Stores a reference to an optional function to be called on completion
-        # TODO: I think this allows me to do stuff one animation complete
+        # [ ] TODO: I think this allows me to do stuff on triggered on an animation
+        # being completed.
         self.on_complete = on_complete
 
         # A flag to indicate if the animation has finished

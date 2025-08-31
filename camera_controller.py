@@ -7,19 +7,28 @@ class CameraController:
     
     def __init__(self, persistent_state, variable_state, tween_manager, pan_speed=15):
 
-        # ──────────────────────────────────────────────────
-        # ⚙️ Read Config & Initial State
-        # ──────────────────────────────────────────────────
         # Read the static configuration from persistent_state
         self.zoom_config = persistent_state["pers_zoom_config"]
         self.tween_manager = tween_manager
         
         # Sync internal state with the initial values from variable_state
         self.offset = list(variable_state.get("var_render_offset", (0, 0)))
-               
-        # ──────────────────────────────────────────────────
+        self.dev_quickboot = bool(persistent_state.get("pers_dev_quickboot"))
+
+        if self.dev_quickboot:
+            # Lock zoom entirely to a single step
+            fixed = float(persistent_state.get("pers_quickboot_zoom", 0.40))
+            self.zoom_config.update({"min_zoom": fixed, "max_zoom": fixed, "zoom_interval": 1.0})
+            self.zoom = fixed
+            variable_state["var_current_zoom"] = fixed
+            # make sure we still have this
+            self.pan_speed = pan_speed
+            # Don’t run the dynamic min-zoom computation at all
+            print(f"[Camera] ⚙️ Dev Quickboot: zoom locked at {fixed:.2f}.")
+            print(f"[Camera] ✅ Camera controller initialized.")
+            return
+
         # ⚙️ Calculate Dynamic Minimum Zoom
-        # ──────────────────────────────────────────────────
         screen_w, screen_h = persistent_state["pers_screen"].get_size()
         map_cols = persistent_state["pers_map_size"]["cols"]
         map_rows = persistent_state["pers_map_size"]["rows"]
@@ -139,6 +148,9 @@ class CameraController:
         if keys[pygame.K_a]: self.offset[0] += self.pan_speed
         if keys[pygame.K_d]: self.offset[0] -= self.pan_speed
             
+        if self.dev_quickboot:
+            return  # ignore zoom input entirely
+
         # Zooming
         for event in events:
             if event.type == pygame.MOUSEWHEEL:
@@ -169,6 +181,12 @@ class CameraController:
 
     def _snap_zoom(self):
         """Snaps the current zoom level to the nearest discrete step."""
+        
+        if getattr(self, "dev_quickboot", False):
+            # Hard clamp to the fixed value
+            self.zoom = round(self.zoom_config["min_zoom"], 2)
+            return
+        
         config = self.zoom_config
         step, min_z, max_z = config["zoom_interval"], config["min_zoom"], config["max_zoom"]
         

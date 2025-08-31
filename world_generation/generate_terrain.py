@@ -26,6 +26,7 @@ CENTRAL_DESERT_DISTANCE_STEPS = None       # The N most inland distance tiers wi
 # ──────────────────────────────────────────────────
 # This list defines the priority order for the GLOBAL generation mode.
 GLOBAL_TAG_PRIORITY = [
+    ("is_ocean",),
     ("is_mountain",),
     ("is_lake",),
     ("is_coast", "windward"),
@@ -40,13 +41,14 @@ GLOBAL_TAG_PRIORITY = [
     ("leeward",),
     ("mountain_range",),
     ("lowlands",),
-    ("is_ocean",),
+
 ]
 
 # This list defines the priority order for the new REGIONAL biome-based mode.
 REGIONAL_TAG_PRIORITY = [
     # --- Highest Priority: Core Features ---
     ("is_mountain",),
+    ("is_ocean",),
     ("is_lake",),
         
     # --- Biome-Specific Valleys (Windward + Leeward) ---
@@ -82,9 +84,6 @@ REGIONAL_TAG_PRIORITY = [
     ("tropical",),
     ("temperate",),
     ("floodplains",),
-
-    # --- Final Water Fallback ---
-    ("is_ocean",),
 ]
 
 # ──────────────────────────────────────────────────

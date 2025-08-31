@@ -7,6 +7,11 @@ from shared_helpers import build_zoom_steps
 
 DEBUG = True
 
+# [ ] TODO: run every single PNG with transperancy through this when loading it
+def load_png(path, with_alpha=True):
+    surf = pygame.image.load(path)
+    return surf.convert_alpha() if with_alpha else surf.convert()
+
 # ⚙️ Initialization
 def load_player_assets(assets_state, persistent_state):
     """
