@@ -257,7 +257,7 @@ while running:
     # 🎨 Render
     render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state)
 
-    # Update the full display and cap the framerate.
+    # Update the full display .
     pygame.display.flip()
 
 pygame.quit()

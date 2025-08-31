@@ -1,9 +1,9 @@
 # renderer.py
 # The core rendering engine, responsible for sorting and drawing all visual elements.
 
-from shared_helpers import hex_to_pixel, snap_zoom_to_nearest_step, hex_geometry
+from shared_helpers import hex_to_pixel, hex_geometry
 import pygame, hashlib
-
+from load_assets import get_font
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -16,108 +16,125 @@ FONT_CACHE = {}
 # ⚙️ Initialization & Core Loop
 # ──────────────────────────────────────────────────
 
-# In renderer.py
-
-def initialize_render_states(persistent_state):
+def initialize_render_states(persistent_state, notebook):
     """
     Initializes and stores all render-specific configurations,
     including the centralized z-order formulas.
     """
-    # Define a constant to create a consistent vertical position offset
     Z_ROW_MULTIPLIER = 0.001
-    
-    # Create a reusable helper function for the vertical position offset.
     vert_offset = lambda r: r * Z_ROW_MULTIPLIER
-
-    # Z-Order Formulas
     persistent_state["pers_z_formulas"] = {
-
-        # --- Layer 1: Core World ---
         "tile":          lambda r: 1.0 + vert_offset(r),
-        "path_curve":     lambda r: 1.0 + vert_offset(r) + 0.0001, # Just under the token
-        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0002, # Just above its tile
-
-        # --- Layer 2: Terrain Debug Overlays ---
+        "path_curve":    lambda r: 1.0 + vert_offset(r) + 0.0001,
+        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0002,
         "debug_icon":    lambda r: 2.0 + 0.1,
         "terrain_tag":   lambda r: 2.0 + 0.2,
         "coordinate":    lambda r: 2.0 + 0.3,
         "continent_spine": lambda r: 2.0 + 0.4,
         "region_border": lambda r: 2.0 + 0.5,
         "debug_gap":     lambda r: 2.0 + 0.6,
-
-        # --- Layer 3: UI  ---
         "ui_panel":      lambda r: 3.0,
+        "splash_screen": lambda r: 3.9, # Drawn behind most things, but on top of black
+        "fade_overlay":  lambda r: 4.0, # Highest z-value, always on top
     }
-    
-    print("[renderer] ✅ Render states and z-formulas initialized.")
 
-    
-def get_font(size):
-    """Return a cached SysFont of the given size."""
+    # Create the fade overlay "buddy" here to guarantee it exists before any scene.
+    # This is the "black curtain" that is down at the start of the program.
+    notebook['FADE'] = {'type': 'fade_overlay', 'value': 255, 'z': persistent_state["pers_z_formulas"]["fade_overlay"](0)}
 
-    # Check if the requested font size is already in the cache
-    font = FONT_CACHE.get(size)
-    if font is None:
-
-        # If not, create a new font and store it in the cache
-        font = pygame.font.SysFont("Arial", size)
-        FONT_CACHE[size] = font
-    return font
+    if DEBUG: print("[renderer] ✅ Render states and z-formulas initialized.")
 
 def get_z_value(drawable):
-    """A universal getter for 'z' that works on both objects and dicts."""
+    # Checks if the drawable has a 'z' attribute and returns it
     if hasattr(drawable, 'z'):
         return drawable.z
+    # If not, it checks if the drawable is a dictionary and returns the 'z' key's value, or 0 if not present
     elif isinstance(drawable, dict):
         return drawable.get('z', 0)
+    # Returns a default z-value of 0 for all other cases
     return 0
 
 def render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state):
-    """
-    Collects every entry from both tiledata and notebook,
-    sorts them all by 'z', and steps through them in order.
-    If any entry is missing 'z', skips it and prints a debug message (if DEBUG).
-    """
 
-    # Combine all drawable entries from both the tiledata and the notebook
-    draw_pot = list(tile_objects.values()) + list(notebook.values())
-
-    # Filter out entries missing a 'z' value and count the number skipped
+    # Filters the notebook to create a list of all valid drawables (objects with a 'type' key)
+    drawables_from_notebook = [v for v in notebook.values() if isinstance(v, dict) and 'type' in v]
+    
+    # Combines the tile objects and notebook drawables into a single list
+    draw_pot = list(tile_objects.values()) + drawables_from_notebook
+    
+    # Initializes a list to hold objects that will be drawn
     to_draw = []
+
+    # Initializes a counter for skipped drawables
     skipped = 0
 
+    # Iterates through all potential drawables
     for entry in draw_pot:
-        # This universal check now correctly finds 'z' in both objects and dictionaries
+
+        # Checks if the entry has a 'z' attribute or key
         has_z = hasattr(entry, 'z') or (isinstance(entry, dict) and 'z' in entry)
+        
+        # If the entry has a z-value, it is added to the list of objects to be drawn
         if has_z:
             to_draw.append(entry)
         else:
+
+        # Otherwise, the skipped counter is incremented
             skipped += 1
 
-    # Print a debug message if any drawables were skipped
+    # Prints a debug message if any drawables were skipped
     if DEBUG and skipped:
         print(f"[renderer] ⚠️ {skipped} drawables skipped (missing 'z' value)")
 
-    # Sort the list of drawables by their z-order
+    # Sorts the list of drawables based on their z-value
     to_draw.sort(key=get_z_value)
 
-    # Render each drawable in z-order
+    # Iterates through the sorted list and renders each drawable
     for drawable in to_draw:
 
-        # Get the interpreter for the drawable's type
-        typ = getattr(drawable, 'type', None) or drawable.get('type') # Also make this universal
-        interpreter = TYPEMAP.get(typ)
-        if interpreter:
+        # Retrieves the type of the drawable from its attribute or dictionary key
+        typ = getattr(drawable, 'type', None) or drawable.get('type')
 
-            # Call the appropriate interpreter function
+        # Gets the corresponding interpreter function from the TYPEMAP
+        interpreter = TYPEMAP.get(typ)
+
+        # If a valid interpreter is found, it is called to render the drawable
+        if interpreter:
             interpreter(screen, drawable, persistent_state, assets_state, variable_state)
-        else:
-            # Optionally log or handle missing interpreter
-            pass
+        elif DEBUG:
+            print(f"[renderer] ❌ No interpreter found for drawable type '{typ}'")
 
 # ──────────────────────────────────────────────────
 # ⌨️ Drawable Interpreters
 # ──────────────────────────────────────────────────
+
+def splash_screen_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """A simple interpreter that blits a pre-rendered surface, like a splash screen."""
+    
+    # Retrieves the pre-rendered surface from the drawable dictionary
+    surface = drawable.get("surface")
+
+    # Blits the surface onto the screen if it exists
+    if surface:
+        screen.blit(surface, (0, 0))
+
+def fade_overlay_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """Draws a screen-sized black rectangle with a variable alpha value."""
+    
+    # Retrieves the 'value' key from the drawable dictionary and converts it to an integer for the alpha value
+    alpha = int(drawable.get("value", 0))
+            
+    # Checks if the alpha value is greater than 0
+    if alpha > 0:
+
+        # Creates a new surface with the same dimensions as the screen and an alpha channel for transparency
+        
+        # Fills the surface with a transparent black color, using the alpha value for transparency
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, alpha))
+
+        # Blits the overlay onto the screen
+        screen.blit(overlay, (0,0))
 
 def tile_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """
@@ -137,18 +154,19 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     #     ocean_interpreter(screen, drawable, persistent_state, assets_state)
     #     return
 
+    # ✨ OPTIMIZATION: Now, the tile_type_interpreter can directly access the correct list without any filtering.
     # Resolve variants for the given terrain
     variants = tileset.get(terrain)
-    if not variants:
+    if not variants or not variants.get('base'):
         if DEBUG: print(f"[renderer] ⚠️ Missing terrain '{terrain}', falling back to 'Base'.")
         terrain = "Base"
-        variants = tileset.get("Base", [])
-        if not variants:
+        variants = tileset.get("Base", {})
+        if not variants.get('base'):
             if DEBUG: print("[renderer] ❌ No 'Base' variants available.")
             return
-    non_river_variants = [v for v in variants if "river_bitmask" not in v]
-    if not non_river_variants:
-        non_river_variants = variants
+
+    # ✨ OPTIMIZATION: Directly access the pre-filtered list of base variants.
+    non_river_variants = variants.get('base', [])
 
     # Create a stable hash from the tile's coordinates and terrain type
     seed = f"{q},{r},{terrain}".encode()
@@ -167,25 +185,19 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
 
         # Find ANY mountain sprite with the correct bitmask
         matching_river_mountains = [
-            ms for ms in variants if ms.get("river_bitmask") == river_bitmask
+            ms for ms in variants.get('river', []) if ms.get("river_bitmask") == river_bitmask
         ]
 
         if matching_river_mountains:
             # Pick one consistently based on the tile's hash to prevent flickering.
             entry = matching_river_mountains[h % len(matching_river_mountains)]
 
-    if entry is None:
-        # If no special sprite was found, find a standard base tile.
-        non_river_variants = [v for v in variants if "river_bitmask" not in v]
+    # If no special river-mountain sprite was found, fall back to a standard base tile.
+    if not entry and non_river_variants:
 
         # Select a variant consistently based on the hash
-        if non_river_variants:
-            stable_variant_index = h % len(non_river_variants)
-            entry = non_river_variants[stable_variant_index]
-        else:
-
-            # Failsafe: fall back to any available variant
-            entry = variants[h % len(variants)] # Failsafe
+        stable_variant_index = h % len(non_river_variants)
+        entry = non_river_variants[stable_variant_index]
 
     if not entry:
         if DEBUG: print(f"[renderer] ❌ Could not resolve a sprite for {terrain} at ({q},{r}).")
@@ -220,19 +232,28 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     # 🌊 Blit Overlays (Coast, River, etc.)
     # Render coastline if the tile has a `has_shoreline` tag
 
-# Next review: Tint shorelines based on edge-sharing terrain type.
+# TODO review: Tint shorelines based on edge-sharing terrain type.
 
     if hasattr(drawable, 'has_shoreline'):
-        has_shoreline = drawable.has_shoreline
-        coast_sprites = assets_state["tileset"].get("Coast", [])
+        # has_shoreline = drawable.has_shoreline old code
+        # coast_sprites = assets_state["tileset"].get("Coast", [])
         
-        # Find all coast sprites with a matching bitmask
-        matching_variants = [s for s in coast_sprites if s.get("bitmask") == has_shoreline]
+        # # Find all coast sprites with a matching bitmask
+        # matching_variants = [s for s in coast_sprites if s.get("bitmask") == has_shoreline]
+
+        shoreline_bitmask = drawable.has_shoreline
+        
+        # ✨ OPTIMIZATION: Fast dictionary lookup instead of list filtering.
+        coast_sprites_by_mask = assets_state["tileset"].get("Coast", {})
+        matching_variants = coast_sprites_by_mask.get(shoreline_bitmask)
 
         if matching_variants:
 
             # Select a variant consistently based on the tile's hash
-            seed = f"{q},{r},Coast,{has_shoreline}".encode()
+            # seed = f"{q},{r},Coast,{has_shoreline}".encode() old code
+            
+            # ✨ OPTIMIZATION: Fast dictionary lookup instead of list filtering.
+            seed = f"{q},{r},Coast,{shoreline_bitmask}".encode()
             h = int.from_bytes(hashlib.md5(seed).digest(), "big")
             coast_entry = matching_variants[h % len(matching_variants)]
 
@@ -282,8 +303,12 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
                     simple_mask_list[i] = '1'
                     simple_mask = "".join(simple_mask_list)
                     
-                    mouth_sprites = assets_state["tileset"].get(sprite_key, [])
-                    matching_variants = [s for s in mouth_sprites if s.get("bitmask") == simple_mask]
+                    # mouth_sprites = assets_state["tileset"].get(sprite_key, [])
+                    # matching_variants = [s for s in mouth_sprites if s.get("bitmask") == simple_mask] old code
+
+                    # ✨ OPTIMIZATION: Fast dictionary lookup.
+                    mouth_sprites_by_mask = assets_state["tileset"].get(sprite_key, {})
+                    matching_variants = mouth_sprites_by_mask.get(simple_mask)
 
                     if matching_variants:
 
@@ -300,9 +325,13 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
         else:
 
             # Regular Rivers and Springs use the same, simpler blitting logic
-            river_sprites = assets_state["tileset"].get(sprite_key, [])
-            matching_variants = [s for s in river_sprites if s.get("bitmask") == river_bitmask_str]
+            # river_sprites = assets_state["tileset"].get(sprite_key, []) old code
+            # matching_variants = [s for s in river_sprites if s.get("bitmask") == river_bitmask_str]
             
+            # ✨ OPTIMIZATION: Fast dictionary lookup.
+            river_sprites_by_mask = assets_state["tileset"].get(sprite_key, {})
+            matching_variants = river_sprites_by_mask.get(river_bitmask_str)
+
             if matching_variants:
 
                 # Select the sprite consistently based on a new hash
@@ -446,10 +475,9 @@ def text_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     base_size = drawable.get("base_size", 16)
     font_size = max(8, int(base_size * zoom))
 
-    # Get cached font object
-    font = get_font(font_size)
-
-    # Prepare the text and color for rendering
+    # ✨ FIX: Get the font from the central cache.    font_key = getattr(drawable, 'font_key', 'regular_medium')
+    font_key = getattr(drawable, 'font_key', 'regular_medium')
+    font = get_font(font_key)
     text = str(getattr(drawable, 'text', drawable.get("text", "")))
     color = getattr(drawable, 'color', drawable.get("color", (0, 0, 0)))
 
@@ -520,54 +548,93 @@ def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
 
 def path_curve_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Draws a smooth curve inside a tile based on the path's entry and exit points."""
+    
+    # Retrieves the current, previous, and next hex coordinates from the drawable dictionary
     coord = drawable.get("coord")
     prev_coord = drawable.get("prev_coord")
     next_coord = drawable.get("next_coord")
 
+    # Gets the geometric data for the current hex
     geom = hex_geometry(coord[0], coord[1], persistent_state, variable_state)
     
     # Determine the start and end points of the curve for this tile
     entry_dir, exit_dir = None, None
 
+    # Determines the starting point of the curve within the tile
     if prev_coord is None:
+
+        # If there is no previous hex, the path starts at the center of the current hex
         p_start = geom['center']
     else:
+
+        # Finds the direction of the adjacent previous hex
         entry_dir = [d for d, n in geom['neighbors'].items() if n == prev_coord][0]
+        
+        # Gets the two corners that define the entry edge
         edge_corners = geom['edges'][persistent_state['pers_edge_index'][entry_dir]]
+        
+        # The start point is the midpoint of the entry edge
         p_start = ((edge_corners[0][0] + edge_corners[1][0]) / 2, (edge_corners[0][1] + edge_corners[1][1]) / 2)
 
+    # Determines the end point of the curve within the tile
     if next_coord is None:
+
+        # If there is no next hex, the path ends at the center of the current hex
         p_end = geom['center']
     else:
+
+        # Finds the direction of the adjacent next hex
         exit_dir = [d for d, n in geom['neighbors'].items() if n == next_coord][0]
+        
+        # Gets the two corners that define the exit edge
         edge_corners = geom['edges'][persistent_state['pers_edge_index'][exit_dir]]
+        
+        # The end point is the midpoint of the exit edge
         p_end = ((edge_corners[0][0] + edge_corners[1][0]) / 2, (edge_corners[0][1] + edge_corners[1][1]) / 2)
 
     # A path is straight if the entry and exit directions are opposites.
+    # Defines a mapping of each direction to its opposite
     opposite_directions = {
         "E": "W", "W": "E",
         "NE": "SW", "SW": "NE",
         "NW": "SE", "SE": "NW"
     }
+
+    # Checks if a straight path is possible by comparing the entry and exit directions
     is_straight = entry_dir and exit_dir and exit_dir == opposite_directions.get(entry_dir)
 
+    # Retrieves the current zoom level and calculates the thickness of the line
     zoom = variable_state.get("var_current_zoom", 1.0)
     thickness = max(2, int(16 * zoom))
+
+    # Defines the color for the path line
     color = (255, 222, 33)
 
+    # If the path is a straight line, it is drawn as a simple line
     if is_straight:
         pygame.draw.line(screen, color, p_start, p_end, thickness)
+
+    # Otherwise, it is drawn as a Bezier curve for a smooth turn
     else:
         # For turns, find the pivot corner to use as the Bézier control point
+        # The control point is the center of the hex by default
         control_point = geom['center']
+
+        # If both a previous and next hex exist, a more specific control point is calculated
         if prev_coord and next_coord:
+
+            # Gets the corner indices for both the entry and exit edges
             entry_corners = set(persistent_state["pers_hex_anatomy"]["edges"][persistent_state['pers_edge_index'][entry_dir]]["corner_pair"])
             exit_corners = set(persistent_state["pers_hex_anatomy"]["edges"][persistent_state['pers_edge_index'][exit_dir]]["corner_pair"])
             # Find the shared corner, if one exists
             intersection = entry_corners.intersection(exit_corners)
             if intersection:
+
+                # The shared corner is used as the pivot point for the curve
                 pivot_corner_index = list(intersection)[0]
                 control_point = geom['corners'][pivot_corner_index]
+
+        # Draws the Bezier curve using the start, control, and end points
         _draw_bezier_curve(screen, p_start, control_point, p_end, thickness, color)
      
 
@@ -621,6 +688,6 @@ TYPEMAP = {
     "path_curve": path_curve_interpreter,
     "debug_triangle": debug_triangle_interpreter,
     "ui_panel": ui_panel_interpreter,
-}
-
-
+    "splash_screen": splash_screen_interpreter,
+    "fade_overlay": fade_overlay_interpreter,
+   }

@@ -1,8 +1,7 @@
 # ui_manager.py
 # Handles the creation, management, and rendering of all UI elements.
 
-
-from .ui_dev_panel import DevPanel
+from .ui_palette_panel import UIPalettePanel
 
 DEBUG = True
 
@@ -13,13 +12,14 @@ DEBUG = True
 class UIManager:
     """Orchestrates all UI components."""
     def __init__(self, persistent_state, assets_state, tile_objects):
+            
         self.persistent_state = persistent_state
         self.assets_state = assets_state
         self.panels = {}
         
         # List of Panels
-        self.panels["dev_panel"] = DevPanel(persistent_state, assets_state, tile_objects)
-        
+        self.panels["ui_palette"] = UIPalettePanel(persistent_state, assets_state, tile_objects)
+
         if DEBUG:
             print(f"[UIManager] ✅ All UI panels instantiated.")
                         

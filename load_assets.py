@@ -1,7 +1,8 @@
 # load_assets.py
 # A dedicated module for loading, processing, and caching all game assets.
 
-import os, pygame
+import os
+import pygame
 from shared_helpers import build_zoom_steps
 
 DEBUG = True
@@ -153,7 +154,7 @@ def load_tileset_assets(assets_state, persistent_state):
     tile_canvas_w = persistent_state["pers_tile_canvas_w"]
     tile_canvas_h = persistent_state["pers_tile_canvas_h"]
     tile_hex_h   = persistent_state["pers_tile_hex_h"]
-    tile_hex_w   = persistent_state["pers_tile_hex_h"]
+    tile_hex_w   = persistent_state["pers_tile_hex_w"]
     blit_offset = persistent_state["pers_asset_blit_offset"]
 
     # Pre-calculate all possible zoom levels
@@ -303,8 +304,16 @@ def load_tileset_assets(assets_state, persistent_state):
 
         # Add the asset entry to the tileset dictionary
         if terrain_name not in tileset:
-            tileset[terrain_name] = []
-        tileset[terrain_name].append(entry)
+        #     tileset[terrain_name] = [] old code
+        # tileset[terrain_name].append(entry)
+
+            # ✨ OPTIMIZATION: Create sub-lists for base and river variants
+            tileset[terrain_name] = {'base': [], 'river': []}
+        
+        if river_bitmask:
+            tileset[terrain_name]['river'].append(entry)
+        else:
+            tileset[terrain_name]['base'].append(entry)
 
     assets_state["tileset"] = tileset
     
@@ -326,13 +335,21 @@ def load_coast_assets(assets_state, persistent_state):
     blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
-    # Ensure the "Coast" key exists in the tileset
-    if terrain_name not in assets_state["tileset"]:
-        assets_state["tileset"][terrain_name] = []
+    # # Ensure the "Coast" key exists in the tileset
+    # if terrain_name not in assets_state["tileset"]:
+    #     assets_state["tileset"][terrain_name] = []
+
+    # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup in the renderer.
+    # The structure will be { "bitmask1": [variantA, variantB], "bitmask2": [...] }
+    assets_state["tileset"][terrain_name] = {}
 
     # ✍️ Loop, Parse, and Store
     for filename in os.listdir(tile_path):
         if not filename.startswith(f"{tile_prefix}{terrain_name}") or not filename.endswith(".png"):
+            continue
+
+        # ✨ FIX: Exclude the more specific "RiverEnd" sprites from this general loader.
+        if "LakeEnd" in filename:
             continue
 
         # Parse filename for bitmask and variant
@@ -351,6 +368,10 @@ def load_coast_assets(assets_state, persistent_state):
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
         
+        if not sprite:
+            if DEBUG: print(f"[assets] ❌ Failed to load image: {full_path}")
+            continue
+
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
         for z in zoom_steps:
@@ -371,9 +392,16 @@ def load_coast_assets(assets_state, persistent_state):
             "variant": variant,
             "filename": filename
         }
-        assets_state["tileset"][terrain_name].append(entry)
+        # assets_state["tileset"][terrain_name].append(entry) old code, replaced with optimization
+    
+        # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup in the renderer.
+        # Append this variant to the list for its specific bitmask
+        if bitmask not in assets_state["tileset"][terrain_name]:
+            assets_state["tileset"][terrain_name][bitmask] = []
+        assets_state["tileset"][terrain_name][bitmask].append(entry)
 
-    print(f"[assets] ✅ Loaded {len(assets_state['tileset'][terrain_name])} coast overlay sprites.")
+    total_coast_sprites = sum(len(v) for v in assets_state['tileset'][terrain_name].values())
+    print(f"[assets] ✅ Loaded {total_coast_sprites} coast overlay sprites.")
 
 # ──────────────────────────────────────────────────
 # 💧 River & Water Overlays
@@ -393,7 +421,10 @@ def load_river_assets(assets_state, persistent_state):
 
     # Ensure the "River" key exists in the tileset
     if terrain_name not in assets_state["tileset"]:
-        assets_state["tileset"][terrain_name] = []
+        # assets_state["tileset"][terrain_name] = [] old code
+
+        # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup in the renderer.
+        assets_state["tileset"][terrain_name] = {}
 
     # Loop, Parse, and Store
     for filename in os.listdir(tile_path):
@@ -415,6 +446,10 @@ def load_river_assets(assets_state, persistent_state):
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
         
+        if not sprite:
+            if DEBUG: print(f"[assets] ⚠️ Failed to load image: {full_path}")
+            continue
+
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
         for z in zoom_steps:
@@ -435,9 +470,15 @@ def load_river_assets(assets_state, persistent_state):
             "variant": variant,
             "filename": filename
         }
-        assets_state["tileset"][terrain_name].append(entry)
+        # assets_state["tileset"][terrain_name].append(entry) old code
 
-    print(f"[assets] ✅ Loaded {len(assets_state['tileset'][terrain_name])} river overlay sprites.")
+        # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup in the renderer.
+        if bitmask not in assets_state["tileset"][terrain_name]:
+            assets_state["tileset"][terrain_name][bitmask] = []
+        assets_state["tileset"][terrain_name][bitmask].append(entry)
+
+    total_river_sprites = sum(len(v) for v in assets_state['tileset'][terrain_name].values())
+    print(f"[assets] ✅ Loaded {total_river_sprites} river overlay sprites.")
 
 def load_river_mouth_assets(assets_state, persistent_state):
     """
@@ -451,8 +492,11 @@ def load_river_mouth_assets(assets_state, persistent_state):
     blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
-    if terrain_name not in assets_state["tileset"]:
-        assets_state["tileset"][terrain_name] = []
+    # if terrain_name not in assets_state["tileset"]: old code
+    #     assets_state["tileset"][terrain_name] = []
+
+    # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup.
+    assets_state["tileset"][terrain_name] = {}
 
     # Loop, Parse, and Store
     for filename in os.listdir(tile_path):
@@ -474,6 +518,10 @@ def load_river_mouth_assets(assets_state, persistent_state):
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
         
+        if not sprite:
+            if DEBUG: print(f"[assets] ⚠️ Failed to load image: {full_path}")
+            continue
+
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
         for z in zoom_steps:
@@ -494,9 +542,15 @@ def load_river_mouth_assets(assets_state, persistent_state):
             "variant": variant,
             "filename": filename
         }
-        assets_state["tileset"][terrain_name].append(entry)
+        # assets_state["tileset"][terrain_name].append(entry) old code
 
-    print(f"[assets] ✅ Loaded {len(assets_state['tileset'].get(terrain_name, []))} river mouth sprites.")
+        # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup.
+        if bitmask not in assets_state["tileset"][terrain_name]:
+            assets_state["tileset"][terrain_name][bitmask] = []
+        assets_state["tileset"][terrain_name][bitmask].append(entry)
+
+    total_mouth_sprites = sum(len(v) for v in assets_state['tileset'][terrain_name].values())
+    print(f"[assets] ✅ Loaded {total_mouth_sprites} river mouth sprites.")
 
 def load_river_end_assets(assets_state, persistent_state):
     """
@@ -513,8 +567,11 @@ def load_river_end_assets(assets_state, persistent_state):
     blit_offset = persistent_state["pers_asset_blit_offset"]
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
 
-    if terrain_name not in assets_state["tileset"]:
-        assets_state["tileset"][terrain_name] = []
+    # if terrain_name not in assets_state["tileset"]: old code
+    #     assets_state["tileset"][terrain_name] = []
+
+    # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup.
+    assets_state["tileset"][terrain_name] = {}
 
     # Check for the existence of the directory and print a warning if not found
     if not os.path.isdir(tile_path):
@@ -542,6 +599,10 @@ def load_river_end_assets(assets_state, persistent_state):
         full_path = os.path.join(tile_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
         
+        if not sprite:
+            if DEBUG: print(f"[assets] ⚠️ Failed to load image: {full_path}")
+            continue
+
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
         for z in zoom_steps:
@@ -552,10 +613,16 @@ def load_river_end_assets(assets_state, persistent_state):
 
         # Store the asset
         entry = { "sprite": sprite, "scale": sprite_by_zoom, "blit_offset": blit_offset, "terrain": terrain_name, "bitmask": bitmask, "variant": variant, "filename": filename }
-        assets_state["tileset"][terrain_name].append(entry)
+        
+        # assets_state["tileset"][terrain_name].append(entry) old code
 
-    print(f"[assets] ✅ Loaded {len(assets_state['tileset'].get(terrain_name, []))} river end sprites.")
+        # ✨ OPTIMIZATION: Store by bitmask for O(1) lookup.
+        if bitmask not in assets_state["tileset"][terrain_name]:
+            assets_state["tileset"][terrain_name][bitmask] = []
+        assets_state["tileset"][terrain_name][bitmask].append(entry)
 
+    total_end_sprites = sum(len(v) for v in assets_state['tileset'][terrain_name].values())
+    print(f"[assets] ✅ Loaded {total_end_sprites} river end sprites.")
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -660,18 +727,18 @@ def create_tinted_glow_masks(persistent_state, assets_state):
     
     # Style 1: Primary border for standard movement (Outer Band)
     PRIMARY_BORDER_STOPS = {
-        "outer_edge": 1.0,
-        "solid_band_start": 0.98,
-        "solid_band_end": 0.85,
-        "inner_fade_end": 0.70,
+        "outer_edge": 1.1,
+        "solid_band_start": 0.93,
+        "solid_band_end": 0.87,
+        "inner_fade_end": 0.69,
     }
 
     # Style 2: Secondary border for hazards (Inner Ring)
     SECONDARY_BORDER_STOPS = {
-        "outer_edge": 0.85,
-        "solid_band_start": 0.83,
-        "solid_band_end": 0.78,
-        "inner_fade_end": 0.73,
+        "outer_edge": 0.80,
+        "solid_band_start": 0.77,
+        "solid_band_end": 0.70,
+        "inner_fade_end": 0.65,
     }
     
     # The maximum alpha for the solid part of the glow.
@@ -778,131 +845,149 @@ def create_tinted_glow_masks(persistent_state, assets_state):
 # 🎨 UI Asset Constants
 # ──────────────────────────────────────────────────
 # Constants for creating the grayscale background texture
-GRAYSCALE_TEXTURE_SIZE = (256, 256) # The scale of the repeating background pattern
-
-# Constants for creating the 9-slice border assets
-FINAL_BORDER_WIDTH = 10 # The final width and height of each border piece in pixels
+GRAYSCALE_TEXTURE_SIZE = (196, 196) # The scale of the repeating background pattern
 
 # ──────────────────────────────────────────────────
 # 🖼️ UI Asset Creation Pipeline
 # ──────────────────────────────────────────────────
 
-def load_ui_texture(assets_state, ui_path):
-    """Loads the single, full-resolution source texture for the UI."""
-    source_file = os.path.join(ui_path, "ZM_Basecolor.png")
-    try:
-        full_res_texture = pygame.image.load(source_file).convert_alpha()
-        assets_state["ui_assets"]["source_texture"] = full_res_texture
-        if DEBUG: print(f"[assets] ✅ Loaded source UI texture.")
-    except pygame.error as e:
-        if DEBUG: print(f"[assets] ❌ Error loading source UI texture: {e}")
-
-def create_grayscale_ui_texture(assets_state):
-    """Creates a scaled, desaturated texture for UI backgrounds."""
-    source_texture = assets_state["ui_assets"].get("source_texture")
-    if not source_texture: return
-
-    # Scale the texture down to the desired repeating size
-    scaled_texture = pygame.transform.smoothscale(source_texture, GRAYSCALE_TEXTURE_SIZE)
+# Replace your old load_ui_texture function with this new one:
+def load_ui_textures(assets_state, ui_path):
+    """Loads all full-resolution source textures for the UI."""
     
-    # Desaturate it to create the watermark effect
-    grayscale_texture = desaturate_surface(scaled_texture, 1.0)
-    assets_state["ui_assets"]["background_watermark"] = grayscale_texture
-    if DEBUG: print(f"[assets] ✅ Created grayscale background watermark.")
+    # A dictionary mapping texture filenames to their asset keys
+    textures_to_load = {
+        "ZM_Basecolor.png": "bark_full_res",
+        "STZ_basecolor.png": "stone_full_res"
+    }
 
+    for filename, key in textures_to_load.items():
+        source_file = os.path.join(ui_path, filename)
+        try:
+            # Load the texture and store it using its new key
+            full_res_texture = pygame.image.load(source_file).convert_alpha()
+            assets_state["ui_assets"][key] = full_res_texture
+            print(f"[assets] ✅ Loaded UI texture '{filename}' as '{key}'.")
+        except pygame.error as e:
+            if DEBUG: print(f"[assets] ❌ Error loading UI texture '{filename}': {e}")
+
+def create_grayscale_ui_watermarks(assets_state):
+    """Creates scaled, desaturated watermark textures for UI backgrounds."""
+    
+    # A dictionary mapping the source texture key to the desired output key
+    textures_to_process = {
+        "bark_full_res": "bark_background_watermark",
+        "stone_full_res": "stone_background_watermark"
+    }
+
+    # Loop through and process each texture
+    for source_key, output_key in textures_to_process.items():
+        source_texture = assets_state["ui_assets"].get(source_key)
+        if not source_texture:
+            if DEBUG: print(f"[assets] ⚠️  Source texture '{source_key}' not found for watermark creation.")
+            continue
+
+        # Scale the texture down to the desired repeating size
+        scaled_texture = pygame.transform.smoothscale(source_texture, GRAYSCALE_TEXTURE_SIZE)
+        
+        # Desaturate it to create the watermark effect
+        grayscale_texture = desaturate_surface(scaled_texture, 1.0)
+        
+        # Store the result using its new key
+        assets_state["ui_assets"][output_key] = grayscale_texture
+        print(f"[assets] ✅ Created '{output_key}'.")
+
+# Replace your old create_ui_border_assets function with this new one:
 def create_ui_border_assets(assets_state):
     """
-    Slices the master UI texture into a 3x3 grid of border pieces.
+    Creates 9-slice border pieces for multiple UI styles (e.g., bark, stone).
+    Each style can have its own source texture, border width, and processing.
     """
-    # 🎨 Asset Loading
-    source_texture = assets_state["ui_assets"].get("source_texture")
-    if not source_texture:
-        if DEBUG: print("[assets] ⚠️  Source texture not found for border creation.")
-        return
-
-    # 🏞️ Master Tile Creation
-    # The master tile is scaled to be 3x the final border width,
-    # so it can be perfectly sliced into a 3x3 grid.
-    master_tile_size = (FINAL_BORDER_WIDTH * 3, FINAL_BORDER_WIDTH * 3)
-    master_tile = pygame.transform.smoothscale(source_texture, master_tile_size)
     
-    # 🔪 Slicing into 9 Pieces
-    border_pieces = {}
-    piece_size = FINAL_BORDER_WIDTH
-    
-    for row in range(3):
-        for col in range(3):
-            # Calculate the piece number (1-9), stored as a string key
-            piece_num = str(row * 3 + col + 1)
-            
-            # Define the area to slice from the master tile
-            slice_rect = pygame.Rect(col * piece_size, row * piece_size, piece_size, piece_size)
-            
-            # Create a new, independent surface for the piece by copying the subsurface
-            border_pieces[piece_num] = master_tile.subsurface(slice_rect).copy()
+    # A list defining all the border styles we want to generate
+    border_styles = [
+        {
+            "source_key": "bark_full_res",      # Which texture to use
+            "output_key": "bark_border_pieces",  # What to name the final asset group
+            "border_width": 12,                  # The thickness of this border style
+            "desaturation": 0.0                  # How much to desaturate (0.0 = none)
+        },
+        {
+            "source_key": "stone_full_res",
+            "output_key": "stone_border_pieces",
+            "border_width": 6,                 
+            "desaturation": 0.6                  # Apply a slight desaturation for a grayer look
+        }
+    ]
 
-    # 💾 Asset Saving
-    assets_state["ui_assets"]["border_pieces"] = border_pieces
-    if DEBUG: print(f"[assets] ✅ Created 9 UI border pieces.")
+    # Loop through and generate the assets for each style
+    for style in border_styles:
+        source_texture = assets_state["ui_assets"].get(style["source_key"])
+        if not source_texture:
+            if DEBUG: print(f"[assets] ⚠️ Source texture '{style['source_key']}' not found for border creation.")
+            continue
 
-def load_button_assets(assets_state):
-    """
-    Loads all UI buttons from subdirectories. Each subdirectory in the buttons
-    folder is treated as a unique button, containing its state images.
-    """
-    # 🎨 Config & Constants
-    UI_BUTTON_PATH = "sprites/ui/buttons"
-    BUTTON_SCALE_FACTOR = 0.8 # 1.0 means no scaling
+        processed_texture = source_texture
+        # Apply desaturation if specified
+        if style["desaturation"] > 0.0:
+            processed_texture = desaturate_surface(source_texture, style["desaturation"])
 
-    # ✨ Asset Loading & Processing
-    button_assets = {}
+        # Create the master tile to be sliced
+        border_width = style["border_width"]
+        master_tile_size = (border_width * 3, border_width * 3)
+        master_tile = pygame.transform.smoothscale(processed_texture, master_tile_size)
+        
+        # Slice the master tile into 9 pieces
+        border_pieces = {}
+        for row in range(3):
+            for col in range(3):
+                piece_num = str(row * 3 + col + 1)
+                slice_rect = pygame.Rect(col * border_width, row * border_width, border_width, border_width)
+                border_pieces[piece_num] = master_tile.subsurface(slice_rect).copy()
 
-    # Check if the main button directory exists
-    if not os.path.isdir(UI_BUTTON_PATH):
-        if DEBUG: print(f"[assets] ⚠️  Button directory not found, skipping: {UI_BUTTON_PATH}")
-        return
+        # Save the finished set of pieces using the specified output key
+        assets_state["ui_assets"][style["output_key"]] = border_pieces
+        print(f"[assets] ✅ Created 9 UI border pieces for style '{style['output_key']}'.")
 
-    # Iterate through each subdirectory in the main buttons folder
-    # Each subdirectory represents one button (e.g., "save_map")
-    for button_name in os.listdir(UI_BUTTON_PATH):
-        button_folder_path = os.path.join(UI_BUTTON_PATH, button_name)
+# ──────────────────────────────────────────────────
+# 🔠 Font Cache & Management
+# ──────────────────────────────────────────────────
+# A module-level dictionary to act as a singleton cache for all font objects.
+_FONT_CACHE = {}
+_DEFAULT_FONT_KEY = "regular_medium"
 
-        # Ensure it's actually a directory
-        if os.path.isdir(button_folder_path):
-            # Create a dictionary to hold this button's states
-            button_assets[button_name] = {}
 
-            # Iterate through the files inside the button's personal folder
-            # Each file represents a state (e.g., "normal.png")
-            for filename in os.listdir(button_folder_path):
-                if not filename.endswith(".png"):
-                    continue
+def initialize_font_cache():
+    """Loads all predefined fonts into the central cache. Call this once on startup."""
+    font_configs = {
+        # ✨ FIX: Point back to the static fonts that Pygame can render correctly.
+        "styles": {
+            "regular": "sprites/fonts/static/NotoSans-Regular.ttf",
+            "bold": "sprites/fonts/static/NotoSans-Bold.ttf"
+        },
+        "sizes": {"small": 10, "medium": 14, "large": 18},
+    }
+    for style_name, font_path in font_configs["styles"].items():
+        for size_name, size_pixels in font_configs["sizes"].items():
+            font_key = f"{style_name}_{size_name}"
+            try:
+                _FONT_CACHE[font_key] = pygame.font.Font(font_path, size_pixels)
+            except pygame.error:
+                if DEBUG: print(f"[assets] ❌ FONT ERROR: Could not load '{font_path}'. Key '{font_key}' is unavailable.")
+    if DEBUG: print(f"[assets] ✅ {len(_FONT_CACHE)} fonts loaded into cache.")
 
-                # The state is the filename without the extension
-                state = filename.replace('.png', '')
+def get_font(key="regular_medium"):
+    """Retrieves a font from the cache, falling back to the default if not found."""
+    font = _FONT_CACHE.get(key)
+    if not font and DEBUG: print(f"[assets] ⚠️ Font key '{key}' not found. Falling back to default.")
+    return font or _FONT_CACHE.get(_DEFAULT_FONT_KEY)
 
-                # Load the image
-                full_path = os.path.join(button_folder_path, filename)
-                sprite = pygame.image.load(full_path).convert_alpha()
-
-                # Apply scaling if needed
-                if BUTTON_SCALE_FACTOR != 1.0:
-                    w, h = sprite.get_size()
-                    sprite = pygame.transform.smoothscale(sprite, (int(w * BUTTON_SCALE_FACTOR), int(h * BUTTON_SCALE_FACTOR)))
-
-                # Store the final sprite in the dictionary under its state
-                button_assets[button_name][state] = sprite
-    
-    # Add the organized button assets to the main assets_state dictionary
-    assets_state["ui_assets"]["buttons"] = button_assets
-    print(f"[assets] ✅ Loaded {len(button_assets)} button types from the UI folder.")
-
+# Now, update the main orchestrator to call this new function
 def load_all_ui_assets(assets_state):
     """Orchestrator to run the entire UI asset creation pipeline."""
     assets_state["ui_assets"] = {}
     ui_path = "sprites/ui"
     
-    load_ui_texture(assets_state, ui_path)
-    create_grayscale_ui_texture(assets_state)
+    load_ui_textures(assets_state, ui_path)
+    create_grayscale_ui_watermarks(assets_state)
     create_ui_border_assets(assets_state)
-    load_button_assets(assets_state)

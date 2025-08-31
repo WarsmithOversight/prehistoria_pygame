@@ -5,13 +5,14 @@ from shared_helpers import hex_to_pixel
 class CameraController:
     """Manages all camera state, including auto-centering and zoom configuration."""
     
-    def __init__(self, persistent_state, variable_state, pan_speed=15):
+    def __init__(self, persistent_state, variable_state, tween_manager, pan_speed=15):
 
         # ──────────────────────────────────────────────────
         # ⚙️ Read Config & Initial State
         # ──────────────────────────────────────────────────
         # Read the static configuration from persistent_state
         self.zoom_config = persistent_state["pers_zoom_config"]
+        self.tween_manager = tween_manager
         
         # Sync internal state with the initial values from variable_state
         self.offset = list(variable_state.get("var_render_offset", (0, 0)))
@@ -63,7 +64,7 @@ class CameraController:
         
         print(f"[Camera] ✅ Camera controller initialized.")
 
-    def center_on_map(self, persistent_state, variable_state):
+    def center_on_map(self, persistent_state, variable_state, animated=True):
         """Calculates the correct offset to center the map and updates the state."""
         # Get screen and map center coordinates
         screen = persistent_state["pers_screen"]
@@ -71,22 +72,34 @@ class CameraController:
         screen_center_px = (screen_w / 2, screen_h / 2)
         map_center_q, map_center_r = persistent_state["pers_map_center"]
         
-        # Calculate the pixel position of the map's center hex
-        map_center_px = hex_to_pixel(map_center_q, map_center_r, persistent_state, variable_state)
+        # ✨ FIX: Get the pure "world space" pixel position, ignoring current camera state.
+        temp_variable_state = {"var_current_zoom": 1.0, "var_render_offset": (0, 0)}
+        map_center_world_px = hex_to_pixel(map_center_q, map_center_r, persistent_state, temp_variable_state)
 
         # Calculate the required offset to align the map center with the screen center
-        offset_x = screen_center_px[0] - map_center_px[0]
-        offset_y = screen_center_px[1] - map_center_px[1]
-        
-        # Update the controller's internal state
-        self.offset = [offset_x, offset_y]
-        
-        # Update the global variable_state so all other modules see the change
-        variable_state["var_render_offset"] = tuple(self.offset)
-        print(f"[Camera] ✅ Map centered with offset {tuple(self.offset)}.")
+        offset_x = screen_center_px[0] - (map_center_world_px[0] * self.zoom)
+        offset_y = screen_center_px[1] - (map_center_world_px[1] * self.zoom)
 
-    def center_on_tile(self, q, r, persistent_state, variable_state):
+        if animated:
+            # ✨ Animate the camera pan instead of instantly setting the offset
+            self.tween_manager.add_tween(
+                target_dict=self,
+                animation_type='pan',
+                drawable_type='camera_offset',
+                start_val=tuple(self.offset),
+                end_val=(offset_x, offset_y),
+                duration=1.0 # seconds
+            )
+            print(f"[Camera] ✅ Panning to center of map.")
+        else:
+            # Instantly set the offset and update the global state.
+            self.offset = [offset_x, offset_y]
+            variable_state["var_render_offset"] = tuple(self.offset)
+            print(f"[Camera] ✅ Map instantly centered.")
+ 
+    def center_on_tile(self, q, r, persistent_state, variable_state, animated=True):        
         """Calculates the offset to center the view on a specific hex coordinate."""
+        
         # 1. Get screen center
         screen_w, screen_h = persistent_state["pers_screen"].get_size()
         screen_center_px = (screen_w / 2, screen_h / 2)
@@ -98,10 +111,23 @@ class CameraController:
         
         # 3. Calculate the new offset needed to align the target with the screen center,
         #    accounting for the current zoom level.
-        self.offset[0] = screen_center_px[0] - (target_world_px[0] * self.zoom)
-        self.offset[1] = screen_center_px[1] - (target_world_px[1] * self.zoom)
-        
-        print(f"[Camera] ✅ Centered on tile ({q},{r}).")
+        target_offset_x = screen_center_px[0] - (target_world_px[0] * self.zoom)
+        target_offset_y = screen_center_px[1] - (target_world_px[1] * self.zoom)
+ 
+        if animated:
+            # ✨ Animate the camera pan
+            self.tween_manager.add_tween(
+                target_dict=self,
+                animation_type='pan',
+                drawable_type='camera_offset',
+                start_val=tuple(self.offset),
+                end_val=(target_offset_x, target_offset_y),
+                duration=0.7 # seconds
+            )
+            print(f"[Camera] ✅ Scrolling to tile ({q},{r}).")
+        else:
+            self.offset = [target_offset_x, target_offset_y]
+            print(f"[Camera] ✅ Snapping to tile ({q},{r}).")
 
     def handle_events(self, events, persistent_state):
         """Processes events for panning and zooming."""
@@ -150,7 +176,8 @@ class CameraController:
         snapped = round(self.zoom / step) * step
 
         # Then, clamp the result to the dynamic min/max bounds.
-        self.zoom = max(min_z, min(max_z, snapped))
+        clamped = max(min_z, min(max_z, snapped))
+        self.zoom = round(clamped, 2)
 
     def _clamp_offset_to_bounds(self, persistent_state):
             """Ensures the camera's offset does not allow panning past the map's edge."""

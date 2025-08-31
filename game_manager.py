@@ -26,6 +26,8 @@ class GameManager:
         
         self.turn_counter = 1
         self.active_player_index = 0
+        self.is_paused = True # Start in a paused state
+
         self.selected_player = None
         self.is_player_moving = False
 
@@ -44,15 +46,6 @@ class GameManager:
         print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
         self._select_new_climate_effect()
         
-        # Center on the first player to begin
-        # Pass the required arguments in the call
-        self.camera_controller.center_on_tile(
-            self.active_player.q, self.active_player.r, 
-            self.persistent_state, self.variable_state
-        )
-
-
-
     @property
     def active_player(self):
         """A convenient property to get the current active player object."""
@@ -60,7 +53,8 @@ class GameManager:
 
     def advance_turn(self):
         """Advances to the next player's turn and updates the turn counter."""
-
+        if self.is_paused: return
+        
         # 🌪️ Select a new climate effect for the turn
         self._select_new_climate_effect()
 
@@ -117,10 +111,21 @@ class GameManager:
         # Print a status update
         print(f"[GameManager] ✅ Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
 
+    def unpause(self):
+        """Starts the first turn and allows the game to proceed."""
+        if not self.is_paused: return
+        self.is_paused = False
+
+        # NOW the GameManager can take control of the camera
+        self.camera_controller.center_on_tile(
+            self.active_player.q, self.active_player.r,
+            self.persistent_state, self.variable_state
+        )
 
     def handle_click(self, coord):
         """Handles clicks for player selection, deselection, and movement commands."""
-        
+        if self.is_paused: return
+
         # Ignore all clicks while the player is animating
         if self.is_player_moving:
             return
@@ -187,7 +192,7 @@ class GameManager:
         )
 
         if not path_coords:
-            # Path was invalid, so no move will happen. Do nothing.
+            if DEBUG: print(f"[GameManager] ❌⚠️ A* pathfinding returned no valid path from {start_coord} to {destination_coord}.")
             return
 
         # ⚠️ Check if the path triggers a climate hazard
@@ -409,6 +414,6 @@ class GameManager:
         for coord in path[1:]: # Iterate through the path, skipping the starting tile
             tile = self.tile_objects.get(coord)
             if tile and tile.terrain in hazardous_terrains:
-                print(f"[Climate] ⚠️  Hazard Triggered! Player entered {tile.terrain} at {coord}.")
+                if DEBUG: print(f"[Climate] ⚠️ Hazard Triggered! Player entered {tile.terrain} at {coord}.")
                 # In the future, you would call self.draw_hazard_card() here
                 return # Trigger only once per move

@@ -423,6 +423,7 @@ def build_zoom_steps(zoom_config):
     while z <= max_zoom + 1e-9:
         snapped = round(z / step) * step
         steps.append(snapped)
+        steps.append(round(z, 2))
         z += step
     return steps
 
