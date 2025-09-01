@@ -1,11 +1,10 @@
 # scene_manager.py
 # Orchestrates the flow of the game through different scenes (e.g., main menu, loading, in-game).
 
-import pygame, time, os, json
+import pygame, time, json
 import threading, queue
-from ui.ui_components import BasePanel, Button, assemble_organic_panel, UI_ELEMENT_PADDING
-from ui.ui_dimensions import get_panel_dimensions
 from ui.ui_welcome_panel import UIWelcomePanel
+from ui.ui_main_menu import MainMenuPanel
 from load_assets import *
 from world_generation.initialize_tiledata import *
 from world_generation.generate_terrain import *
@@ -109,7 +108,6 @@ class SceneManager:
                 on_complete=on_final_transition_complete
             )
 
-
         # Starts the initial fade-out animation
         self.tween_manager.add_tween(
             target_dict=self.notebook['FADE'],
@@ -117,7 +115,6 @@ class SceneManager:
             start_val=self.notebook['FADE'].get('value', 0), end_val=255, duration=fade_out_duration,
             on_complete=on_fade_out_complete
         )
-
 
     def handle_events(self, events, mouse_pos):
         '''Delegates event handling to the active scene'''
@@ -182,8 +179,18 @@ class MainMenuScene:
 # ──────────────────────────────────────────────────
 class LoadingScene:
     def __init__(self, manager):
-        self.manager = manager; self.persistent_state = manager.persistent_state; self.assets_state = manager.assets_state
-        self.variable_state = manager.variable_state; self.notebook = manager.notebook; self.audio_manager = AudioManager()
+
+        # Stores references to global game state objects
+        self.manager = manager
+        self.persistent_state = manager.persistent_state
+        self.assets_state = manager.assets_state
+        self.variable_state = manager.variable_state
+        self.notebook = manager.notebook
+
+        # Creates an instance of the audio manager
+        self.audio_manager = AudioManager()
+
+        # Initializes flags and variables for the loading process
         self.has_started_loading = False
         self.loading_thread = None
         self.result_queue = queue.Queue()
@@ -191,8 +198,11 @@ class LoadingScene:
     def update(self, dt):
         # While the loading thread is running, check the queue for a result.
         if self.loading_thread and not self.result_queue.empty():
+
             # Retrieve the loaded data from the queue.
             loaded_tile_objects = self.result_queue.get()
+
+            # Stores the loaded tile objects in the notebook
             self.notebook['tile_objects'] = loaded_tile_objects
 
             # Mark the thread as joined.
@@ -244,62 +254,118 @@ class LoadingScene:
         
         except pygame.error: pass
 
-        # ✨ FIX: Use the new centralized get_font function.
-        font = get_font("regular_medium")
+        # Renders the loading text
+        font = get_font("regular_large")
         text_surf = font.render("Prehistoria Digital Prototype ... Loading ...", True, (200, 200, 200))
+        
+        # Gets the rectangle for the text and positions it
         text_rect = text_surf.get_rect(bottomleft=(20, screen.get_height() - 20))
+        
+        # Blits the text onto the splash surface
         splash_surface.blit(text_surf, text_rect)
+        
+        # Retrieves the z-index formula for splash screens
         z_formula = self.persistent_state["pers_z_formulas"]["splash_screen"]
+
+        # Adds the splash screen surface to the notebook as a drawable
         self.notebook['SPLASH'] = {'type': 'splash_screen', 'surface': splash_surface, 'z': z_formula(0)}
     
     def start_load_process(self):
         """This is now called by the SceneManager after the fade-in is complete."""
+        
+        # Checks if the loading process has already started
         if not self.has_started_loading:
+
+            # Sets the flag to indicate loading has begun
             self.has_started_loading = True
+            
             # The target function for our thread. It will run run_load_sequence
             # and put the return value into our queue.
             def worker():
+
+                # Plays the game's soundtrack
                 self.audio_manager.play_music("soundtrack.mp3")
+
+                # Runs the main world generation sequence
                 tile_objects = self.run_load_sequence()
+
+                # Puts the result of the loading sequence into the queue
                 self.result_queue.put(tile_objects)
 
+            # Creates and starts a new thread for the worker function
             self.loading_thread = threading.Thread(target=worker)
             self.loading_thread.start()
 
-
     def _run_timed_step(self, name, func, args):
-        start_time = time.time(); result = func(*args); end_time = time.time()
+
+        # Records the start time of the function call
+        start_time = time.time()
+
+        # Calls the function with the provided arguments
+        result = func(*args)
+
+        # Records the end time
+        end_time = time.time()
+
+        # Prints the time taken to a readable format
         print(f"  - {name:<25} took {end_time - start_time:.4f} seconds.")
+
+        # Returns the result of the function call
         return result
 
     def run_load_sequence(self):
-        print("\n" + "─" * 40); print("Starting Full World Generation & Asset Load"); print("─" * 40)
+
+        # Prints a header for the world generation log
+        print("\n" + "─" * 40)
+        print("Starting Full World Generation & Asset Load")
+        print("─" * 40)
+
+        # Records the total start time
         total_start_time = time.time()
         
+        # Defines a list of asset loading steps
         asset_steps = [("Load Tileset Assets", load_tileset_assets, (self.assets_state, self.persistent_state)),("Load Coast Assets", load_coast_assets, (self.assets_state, self.persistent_state)),("Load River Assets", load_river_assets, (self.assets_state, self.persistent_state)),("Load River Mouth Assets", load_river_mouth_assets, (self.assets_state, self.persistent_state)),("Load River End Assets", load_river_end_assets, (self.assets_state, self.persistent_state)),("Load Player Assets", load_player_assets, (self.assets_state, self.persistent_state)),("Create Glow Masks", create_glow_mask, (self.persistent_state, self.assets_state)),("Create Tinted Glows", create_tinted_glow_masks, (self.persistent_state, self.assets_state)),]
+        
+        # Iterates through the list and runs each asset loading step
         for name, func, args in asset_steps: self._run_timed_step(name, func, args)
         
         # Treat tiledata as a temporary, local variable for the generation process
+        # Runs the step to initialize region seeds
         self._run_timed_step("Initialize Region Seeds", initialize_region_seeds, (self.persistent_state, self.variable_state))
+        
+        # Runs the step to initialize the tile data
         local_tiledata = self._run_timed_step("Initialize Tiledata", initialize_tiledata, (self.persistent_state, self.variable_state))
         
-        world_gen_steps = [("Calculate Map Center", calculate_and_store_map_center, (local_tiledata, self.persistent_state)),("Add Dist from Center", add_distance_from_center_to_tiledata, (local_tiledata, self.persistent_state)),("Add Dist from Ocean", add_distance_from_ocean_to_tiledata, (local_tiledata, self.persistent_state)),("Calculate Monsoon Bands", calculate_monsoon_bands, (local_tiledata, self.persistent_state)),("Tag Continent Spine", tag_continent_spine, (local_tiledata, self.persistent_state)),("Tag Initial Ocean", tag_initial_ocean, (local_tiledata, self.variable_state)),("Tag Ocean Coastline", tag_ocean_coastline, (local_tiledata, self.persistent_state)),("Tag Mountains", tag_mountains, (local_tiledata, self.persistent_state)),("Run Elevation Generation", run_elevation_generation, (local_tiledata, self.persistent_state)),("Assign Biomes", assign_biomes_to_regions, (local_tiledata, self.persistent_state)),("Tag Lowlands", tag_lowlands, (local_tiledata, self.persistent_state)),("Tag Mountain Ranges", tag_mountain_range, (local_tiledata,)),("Sculpt Mountain Ranges", sculpt_mountain_ranges, (local_tiledata, self.persistent_state)),("Tag Central Desert", tag_central_desert, (local_tiledata, self.persistent_state)),("Tag Adj. Scrublands", tag_adjacent_scrublands, (local_tiledata, self.persistent_state)),("Add Windward/Leeward", add_windward_and_leeward_tags, (local_tiledata, self.persistent_state)),
+        # Defines a list of world generation steps
+        world_gen_steps = [("Calculate Map Center", calculate_and_store_map_center, (local_tiledata, self.persistent_state)),("Add Dist from Center", add_distance_from_center_to_tiledata, (local_tiledata, self.persistent_state)),("Add Dist from Ocean", add_distance_from_ocean_to_tiledata, (local_tiledata, self.persistent_state)),("Calculate Monsoon Bands", calculate_monsoon_bands, (local_tiledata, self.persistent_state)),("Tag Continent Spine", tag_continent_spine, (local_tiledata, self.persistent_state)),("Tag Initial Ocean", tag_initial_ocean, (local_tiledata, self.variable_state)),("Tag Ocean Coastline", tag_ocean_coastline, (local_tiledata, self.persistent_state)),("Tag Mountains", tag_mountains, (local_tiledata, self.persistent_state)), ("Sculpt Mountain Ranges", sculpt_mountain_ranges, (local_tiledata, self.persistent_state)), ("Run Elevation Generation", run_elevation_generation, (local_tiledata, self.persistent_state)),("Assign Biomes", assign_biomes_to_regions, (local_tiledata, self.persistent_state)),("Tag Lowlands", tag_lowlands, (local_tiledata, self.persistent_state)),("Tag Mountain Ranges", tag_mountain_range, (local_tiledata,)), ("Tag Central Desert", tag_central_desert, (local_tiledata, self.persistent_state)),("Tag Adj. Scrublands", tag_adjacent_scrublands, (local_tiledata, self.persistent_state)),("Add Windward/Leeward", add_windward_and_leeward_tags, (local_tiledata, self.persistent_state)),
             # This is the corrected sequence for rivers, shorelines, and final terrain
             ("Run River Generation", run_river_generation, (local_tiledata, self.persistent_state)),
             ("Resolve Shorelines", resolve_shoreline_bitmasks, (local_tiledata, self.persistent_state)),
             ("Fill Terrain from Tags", fill_in_terrain_from_tags, (local_tiledata,)),
         ]
 
+        # Iterates through the list and runs each world generation step
         for name, func, args in world_gen_steps: self._run_timed_step(name, func, args)
 
+        # Runs the final step to create the drawable tile objects
         tile_objects = self._run_timed_step("Create Tile Objects", create_tile_objects_from_data, (local_tiledata,))
 
+        # Records the total end time
         total_end_time = time.time()
-        print("─" * 40); print(f"Total Load Time: {total_end_time - total_start_time:.4f} seconds."); print("─" * 40 + "\n")
+
+        # Prints the total load time
+        print("─" * 40)
+        print(f"Total Load Time: {total_end_time - total_start_time:.4f} seconds.")
+        print("─" * 40 + "\n")
+
+        # Returns the final tile objects
         return tile_objects
     
     def on_exit(self):
+
+        # Cleans up the splash screen from the notebook when the scene is exited
         if 'SPLASH' in self.notebook: del self.notebook['SPLASH']
+    
     def handle_events(self, events, mouse_pos): pass
 
 # ──────────────────────────────────────────────────
@@ -307,22 +373,35 @@ class LoadingScene:
 # ──────────────────────────────────────────────────
 class InGameScene:
     def __init__(self, manager):
-        self.manager = manager; self.persistent_state = manager.persistent_state; self.assets_state = manager.assets_state
-        self.variable_state = manager.variable_state; self.notebook = manager.notebook
+
+        # Stores references to global game state objects
+        self.manager = manager
+        self.persistent_state = manager.persistent_state
+        self.assets_state = manager.assets_state
+        self.variable_state = manager.variable_state
+        self.notebook = manager.notebook
+
+        # Initializes a dictionary to hold the game's controllers
         self.controllers = {}
+        
     def on_enter(self, data=None):
         print("[InGameScene] ✅ Entered. Initializing controllers in a paused state...")
-        with open("species.json", "r") as f: all_species_data = json.load(f)
-        players = [Player(player_id=1, species_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)]
         
-        # 1. Create controllers that the GameManager depends on FIRST.
+        # Loads species data from a JSON file
+        with open("species.json", "r") as f:
+            all_species_data = json.load(f)
+        
+        # Creates a list of player instances
+        players = [Player(player_id=1, species_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)]
+
+        # Creates the camera and event bus controllers
         camera_controller = CameraController(self.persistent_state, self.variable_state, self.manager.tween_manager)
         event_bus = EventBus()
  
-        # 2. Now create the GameManager and pass the finished controllers to it.
+        # Creates the game manager instance
         game_manager = GameManager(players, camera_controller, self.notebook['tile_objects'], event_bus, self.manager.tween_manager, self.notebook, self.persistent_state, self.variable_state)
  
-        # 3. Assemble the final dictionary of all controllers.
+        # Assembles the full dictionary of controllers
         self.controllers = {
             'camera': camera_controller,
             'interactor': MapInteractor(),
@@ -331,16 +410,20 @@ class InGameScene:
             'game': game_manager
         }
        
-        # --- Set up the initial "Welcome" camera state ---
-        # 1. Directly set the camera to be fully zoomed out.
+        # Gets the camera controller instance
         camera = self.controllers['camera']
+
+        # Sets the camera's zoom level
         camera.zoom = camera.zoom_config['min_zoom'] * 2
+
+        # Ensures the camera snaps to a valid zoom step
         camera._snap_zoom() # Ensure the new zoom is a valid step.
 
-        # 2. Instantly center the camera on the map without animation.
+        # Centers the camera on the world map
         camera.center_on_map(self.persistent_state, self.variable_state, animated=False)
+        
+        # Creates the welcome panel UI
         self.welcome_panel = UIWelcomePanel(self.persistent_state, self.assets_state, self)
-
     
     def start_game(self):
        """Called by the welcome panel's continue button."""
@@ -352,36 +435,60 @@ class InGameScene:
        # Remove the welcome panel from the screen
        if self.welcome_panel and self.welcome_panel.drawable_key in self.notebook:
            del self.notebook[self.welcome_panel.drawable_key]
-       self.welcome_panel = None # Release the reference
+
+       # Releases the reference to the welcome panel
+       self.welcome_panel = None
 
     def on_exit(self):
+
+        # Clears the controllers dictionary
         self.controllers = {}
 
         # Clean up any remaining drawables from the notebook
+        # Finds all keys to delete from the notebook
         keys_to_delete = [k for k in self.notebook if k not in ['FADE', 'tile_objects']]
+        
+        # Iterates and deletes each key
         for k in keys_to_delete: del self.notebook[k]
     
     def handle_events(self, events, mouse_pos):
+
+        # Exits if controllers are not yet initialized or a transition is in progress
         if not self.controllers or self.manager.is_transitioning: return
+        
+        # Gets the game manager instance
         game_manager = self.controllers['game']
  
+         # Manages events based on whether the game is paused
         if game_manager.is_paused:
+
             # --- Paused (Welcome Screen) Event Loop ---
             if self.welcome_panel:
                 self.welcome_panel.handle_events(events, mouse_pos)
             self.controllers['camera'].handle_events(events, self.persistent_state)
+            
+            # Delegate events to the UI, but not anything else since the game is paused
             ui_handled = self.welcome_panel and self.welcome_panel.rect and self.welcome_panel.rect.collidepoint(mouse_pos)
-            if not ui_handled:
-                pan, _, _ = self.controllers['interactor'].handle_events(events, mouse_pos, self.notebook.get('tile_objects',{}), self.persistent_state, self.variable_state)
-                if pan != (0,0): self.controllers['camera'].pan(pan[0], pan[1])
+            
         else:
+            # TODO: This is where the game happens
             # --- Active Game Event Loop ---
             self.controllers['camera'].handle_events(events, self.persistent_state)
+            
+            # Checks if the UI handled the event
             ui_handled = self.controllers['ui'].handle_events(events, mouse_pos)
+            
+            # If the UI didn't handle it, delegate to the map interactor
             if not ui_handled:
                 pan, click, hover = self.controllers['interactor'].handle_events(events, mouse_pos, self.notebook.get('tile_objects',{}), self.persistent_state, self.variable_state)
+                
+                # Updates the path overlay based on the hover position
                 game_manager.update_path_overlay(hover)
+
+                # Handles a click event if it occurred
                 if click: game_manager.handle_click(click)
+                
+                # Pans the camera if the interactor returns a pan value
                 if pan != (0,0): self.controllers['camera'].pan(pan[0], pan[1])
             else:
                 game_manager.update_path_overlay(None)
@@ -390,128 +497,17 @@ class InGameScene:
                     game_manager.advance_turn()
     
     def update(self, dt):
+
+        # Exits if controllers are not initialized
         if not self.controllers: return
+
+        # Updates the game based on the paused state
         if self.controllers['game'].is_paused:
             if self.welcome_panel:
                 self.welcome_panel.update(self.notebook)
         else:
             self.controllers['ui'].update(self.notebook)
+
+        # Updates the camera controller regardless of the game state
         self.controllers['camera'].update(self.persistent_state, self.variable_state)
-
-# ──────────────────────────────────────────────────
-# 📜 Main Menu Panel UI
-# ──────────────────────────────────────────────────
-class MainMenuPanel(BasePanel):
-    def __init__(self, persistent_state, assets_state, scene):
-        super().__init__(persistent_state, assets_state)
-        self.drawable_key = "main_menu_panel"; self.scene = scene
-
-        self.button_definitions = {
-            "new_world": {
-                "type": "button", # Add the type definition
-                "text_options": ["New World"],
-                "style": {"font_size_key": "regular_large", "text_color": (255, 255, 255), "align": "center"},
-                "action": self.on_new_world
-            },
-            "load_world": {
-                "type": "button", # Add the type definition
-                "text_options": ["Load Saved World"],
-                "style": {"font_size_key": "regular_large", "text_color": (150, 150, 150), "align": "center"},
-                "action": self.on_load_world
-            },
-            "dev_quickboot": {
-                "type": "button", # Add the type definition
-                "text_options": ["Dev Quickboot"],
-                "style": {"font_size_key": "regular_large", "text_color": (255, 255, 255), "align": "center"},
-                "action": self.on_dev_quickboot
-            }
-        }
-        # ✨ NEW: Define a proper layout blueprint, just like the Welcome Panel
-        self.layout_blueprint = [
-            {"id": "new_world"},
-            {"id": "load_world"},
-            {"id": "dev_quickboot"}
-        ]
-        self.dims = get_panel_dimensions(self.button_definitions, self.layout_blueprint, self.assets_state)
-        self.surface = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)
-        self.elements = self._create_and_place_elements()
-        
-        # ✨ FIX: Create a pristine background and a separate drawing surface.
-        self.background = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)
-        self.surface = self.background.copy() # The surface we will actually draw on.
-        self.rect = self.surface.get_rect()
- 
-    def _create_and_place_elements(self):
-        """Creates and positions all UI elements based on the calculated dimensions."""
-        elements = []
-        content_w, content_h = self.dims["panel_background_size"]
-        pad_x, pad_y = UI_ELEMENT_PADDING
- 
-        start_x = (self.surface.get_width() - content_w) / 2
-        current_y = (self.surface.get_height() - content_h) / 2 + pad_y
- 
-        for item in self.layout_blueprint:
-            item_id = item.get("id")
-            element_def = self.button_definitions.get(item_id)
-            if not element_def: continue
- 
-            elem_dims_data = self.dims['element_dims'][item_id]
-            elem_w, elem_h = elem_dims_data["final_size"]
-            elem_x = start_x + (content_w - elem_w) / 2 # Center horizontally
-            element_rect = pygame.Rect(elem_x, current_y, elem_w, elem_h)
- 
-            # Pass the main self.dims dictionary, which holds the uniform geometry
-            button = Button(rect=element_rect, text=element_def["text_options"][0], assets_state=self.assets_state, style=element_def["style"], dims=self.dims, callback=element_def["action"])
-            elements.append(button)
-            current_y += elem_h + pad_y
-        return elements
-
-    def on_new_world(self):
-        # Get the instance of the loading scene from the manager
-        loading_scene = self.scene.manager.scenes["LOADING"]
-        # Tell the manager to change scenes, and to call start_load_process when the fade-in is done.
-        self.scene.manager.change_scene(
-            "LOADING",
-            on_fade_in_complete=loading_scene.start_load_process
-        )
-    
-    def on_load_world(self):
-        if DEBUG: print("[MainMenu] ⚠️ 'Load Saved World' is not yet implemented.")
-    
-    def on_dev_quickboot(self):
-        persistent_state = self.scene.manager.persistent_state
-        variable_state = self.scene.manager.variable_state
-
-        persistent_state["pers_dev_quickboot"] = True
-        persistent_state["pers_quickboot_zoom"] = 0.40
-
-        # Make the zoom config a single legal step.
-        persistent_state["pers_zoom_config"] = {
-            "min_zoom": persistent_state["pers_quickboot_zoom"],
-            "max_zoom": persistent_state["pers_quickboot_zoom"],
-            "zoom_interval": 1.0,      # any value; snapping will clamp to min/max anyway
-            "settle_ms": 0
-        }
-
-        # Seed current zoom to the fixed value (so first render is correct)
-        variable_state["var_current_zoom"] = persistent_state["pers_quickboot_zoom"]
-
-        # Proceed exactly like "New World" (or your prefab path—your choice)
-        loading_scene = self.scene.manager.scenes["LOADING"]
-        
-        # Tell the manager to change scenes, and to call start_load_process when the fade-in is done.
-        self.scene.manager.change_scene(
-            "LOADING",
-            on_fade_in_complete=loading_scene.start_load_process
-        )
-
-    def handle_events(self, events, mouse_pos):
-        local_mouse_pos = (mouse_pos[0] - self.rect.left, mouse_pos[1] - self.rect.top)
-        for element in self.elements: element.handle_events(events, local_mouse_pos)
-    
-    def update(self, notebook):
-        # ✨ FIX: "Wipe" the surface by blitting the clean background onto it each frame.
-        self.surface.blit(self.background, (0, 0))
-        for element in self.elements: element.draw(self.surface)
-        super().update(notebook)
 

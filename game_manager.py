@@ -1,7 +1,7 @@
 # game_manager.py
 # This class orchestrates the game's state, including turns and active players.
 
-from shared_helpers import get_tiles_in_range, a_star_pathfind, hex_to_pixel, find_reachable_tiles
+from shared_helpers import a_star_pathfind, find_reachable_tiles
 import random
 
 DEBUG = True
@@ -10,59 +10,72 @@ class GameManager:
     """Manages the overall game state, turn progression, and active player."""
 
     def __init__(self, players, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state):
-        # ──────────────────────────────────────────────────
-        # ⚙️ Core State
-        # ──────────────────────────────────────────────────
+        
+        # Stores references to the core game systems
         self.tween_manager = tween_manager
         self.players = players
         self.camera_controller = camera_controller
         self.tile_objects = tile_objects
         self.event_bus = event_bus
 
+        # Stores references to global game state objects
         self.persistent_state = persistent_state
         self.variable_state = variable_state
         self.notebook = notebook
-        self.path_keys = [] # Keep track of our path drawables
+
+        # Keeps track of the keys for path drawables in the notebook
+        self.path_keys = []
         
+        # Initializes the turn and player counters
         self.turn_counter = 1
         self.active_player_index = 0
-        self.is_paused = True # Start in a paused state
 
+        # Pauses the game by default at the start
+        self.is_paused = True
+
+        # Initializes variables for player selection and movement
         self.selected_player = None
         self.is_player_moving = False
 
-        self.active_player_move_range = [] # Stores coords for the current turn's overlay
+        # Stores the coordinates for the current turn's movement overlay
+        self.active_player_move_range = []
         self.last_hovered_coord = None
 
-        # ⚙️ Climate Wheel State
+        # Initializes dictionaries for climate effects
         self.master_climate_effects = {}
         self.active_climate_effect = None
+
+        # Populates the list of all possible climate effects
         self._initialize_climate_effects()
 
-        # Pre-calculate the movement range for the first player
+        # Pre-calculates the movement range for the first player at game start
         self._calculate_active_player_movement()
 
         # Announce the start of the game
         print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
+        
+        # Selects the first climate effect
         self._select_new_climate_effect()
         
     @property
     def active_player(self):
         """A convenient property to get the current active player object."""
+        # Returns the player object at the current active player index
         return self.players[self.active_player_index]
 
     def advance_turn(self):
         """Advances to the next player's turn and updates the turn counter."""
+        
+        # Exits the function if the game is paused
         if self.is_paused: return
         
         # 🌪️ Select a new climate effect for the turn
         self._select_new_climate_effect()
 
-        # 🧽 Clean up the previous turn's state 
-        # Hide the movement overlay if it was visible
+        # Hides the movement overlay
         self._toggle_movement_overlay(False)
 
-        # Deselect any player that was left selected
+        # Deselects the previously selected player
         if self.selected_player:
             previous_coord = (self.selected_player.q, self.selected_player.r)
             if self.tile_objects.get(previous_coord):
@@ -82,7 +95,7 @@ class GameManager:
             self.persistent_state, self.variable_state
         )
 
-        # 🧠 Determine and apply any start-of-turn movement modifiers
+        # Determine and apply any start-of-turn movement modifiers
         player = self.active_player
 
         # Reset movement penealties
@@ -95,28 +108,33 @@ class GameManager:
         if start_tile:
             primary_move_color = player.terrain_movement_map.get(start_tile.terrain)
             if primary_move_color in ["medium", "bad"]:
-                # Apply the penalty only for this turn.
+
+                # Applies a movement penalty for this turn if starting on difficult terrain
                 player.turn_movement_modifier = -1
                 print(f"[GameManager] ⚠️ Player {player.player_id} starts on difficult terrain. Movement reduced by 1.")
        
-        # Set the player's movement points for this turn.
+        # Sets the player's movement points for the current turn
         player.remaining_movement = player.movement_points + player.turn_movement_modifier
 
-        # Pre-calculate the movement range for the new active player
+        # Pre-calculates the movement range for the new active player
         self._calculate_active_player_movement()
 
         # Select the new active player
         self._select_player(self.active_player)
 
-        # Print a status update
+        # Prints a status update for the new turn
         print(f"[GameManager] ✅ Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
 
     def unpause(self):
         """Starts the first turn and allows the game to proceed."""
+        
+        # Exits if the game is not paused
         if not self.is_paused: return
+
+        # Unpauses the game
         self.is_paused = False
 
-        # NOW the GameManager can take control of the camera
+        # Centers the camera on the active player
         self.camera_controller.center_on_tile(
             self.active_player.q, self.active_player.r,
             self.persistent_state, self.variable_state
@@ -124,36 +142,42 @@ class GameManager:
 
     def handle_click(self, coord):
         """Handles clicks for player selection, deselection, and movement commands."""
+        
+        # Exits if the game is paused
         if self.is_paused: return
 
         # Ignore all clicks while the player is animating
         if self.is_player_moving:
             return
 
-        # PRIORITY 1: Did the user click on a player token?
+        # Did the user click on a player token?
         for player in self.players:
             if (player.q, player.r) == coord:
-                # If so, delegate all selection logic to our helper and stop.
+                # Selects the player and handles the selection logic
                 self._select_player(player)
                 return
 
-        # PRIORITY 2: If not, was it a valid move command for the selected player?
+        # If not, was it a valid move command for the selected player?
         clicked_tile = self.tile_objects.get(coord)
+        
+        # Checks if the clicked tile is a valid move target for the active player
         if (clicked_tile and
                 getattr(clicked_tile, 'primary_move_color', None) and
                 self.selected_player is self.active_player and
                 coord != (self.active_player.q, self.active_player.r)):
-            # If so, execute the move and stop.
+            
+            # Initiates the player movement
             self.move_player_to(coord)
             return
 
-        # PRIORITY 3: If it's not a player or a move, it's a click on empty space.
-        # Deselect whatever is currently selected.
+        # If it's not a player or a move, it's a click on empty space.
+        # Deselects whatever is currently selected
         self._select_player(None)
 
     def _select_player(self, player_to_select):
         """Handles the logic for selecting a player and showing their overlays."""
-        # First, deselect any currently selected player
+
+        # Deselect any currently selected player
         self._toggle_movement_overlay(False)
         if self.selected_player:
             previous_coord = (self.selected_player.q, self.selected_player.r)
@@ -168,9 +192,12 @@ class GameManager:
         self.selected_player = player_to_select
         coord = (player_to_select.q, player_to_select.r)
         if self.tile_objects.get(coord):
+
+            # Sets the is_selected flag for the tile to enable a visual effect
             self.tile_objects[coord].is_selected = True
 
         # If the selected player is the active one, show the movement overlay
+        # Posts an event to the event bus
         if player_to_select is self.active_player:
             self._toggle_movement_overlay(True)
             print(f"[GameManager] ✅ Selected active player {player_to_select.player_id}.")
@@ -187,41 +214,49 @@ class GameManager:
         # Hide the pathfinding overlay
         self.update_path_overlay(None)
 
+        # Calculates a path from the start to the destination using A*
         path_coords = a_star_pathfind(
             self.tile_objects, start_coord, destination_coord, self.persistent_state, player
         )
 
+        # Returns if no valid path was found
         if not path_coords:
-            if DEBUG: print(f"[GameManager] ❌⚠️ A* pathfinding returned no valid path from {start_coord} to {destination_coord}.")
+            if DEBUG: print(f"[GameManager] ❌ A* pathfinding returned no valid path from {start_coord} to {destination_coord}.")
             return
 
         # ⚠️ Check if the path triggers a climate hazard
         self._check_climate_trigger_on_path(path_coords)
 
+        # Sets a flag to indicate the player is moving
         self.is_player_moving = True
 
         def on_move_complete():
-            # 🧠 Get the destination tile to check its properties
+            # Get the destination tile to check its properties
             destination_tile = self.tile_objects.get(destination_coord)
 
             # Check if the destination is a "dead stop" tile
             if destination_tile and destination_tile.primary_move_color in ["medium", "bad"]:
+                
                 # Landing on a high-cost tile consumes all remaining movement
                 player.remaining_movement = 0
             else:
+
                 # Otherwise, just subtract the path length
                 # We subtract 1 because the path includes the starting tile
                 path_cost = len(path_coords) - 1
                 player.remaining_movement -= path_cost
 
-            # Update the player object's official state
+            # Sets the player's new coordinates
             player.q, player.r = destination_coord
 
-            # Clean up the animation key from the drawable
+            # Gets the player's token from the notebook
             token = self.notebook.get(player.token_key)
             if token and 'pixel_pos' in token:
+
+                # Removes the pixel position key to stop the animation
                 del token['pixel_pos']
 
+            # Resets the moving flag
             self.is_player_moving = False
 
             # Refresh the overlay: hide the old one, then calc and show the new one.
@@ -229,10 +264,10 @@ class GameManager:
             self._calculate_active_player_movement()
             self._toggle_movement_overlay(True)
 
-        # Get the player's drawable "buddy" from the notebook
+        # Retrieves the player's drawable token from the notebook
         token_to_animate = self.notebook.get(player.token_key)
 
-        # Call the new tweener with the hex path
+        # Creates a travel tween to animate the player's movement
         self.tween_manager.add_tween(
             target_dict=token_to_animate,
             animation_type='travel',
@@ -248,11 +283,13 @@ class GameManager:
         for coord in self.active_player_move_range:
             tile = self.tile_objects.get(coord)
             if tile:
-                # 👇 Reset both primary and secondary colors
+                # Reset both primary and secondary colors
                 tile.primary_move_color = None
                 tile.secondary_move_color = None
 
         player = self.active_player
+
+        # Finds all reachable tiles based on the player's remaining movement
         tiles_in_range = find_reachable_tiles(
             start_coord=(player.q, player.r),
             max_cost=player.remaining_movement,
@@ -261,21 +298,32 @@ class GameManager:
             persistent_state=self.persistent_state
         )
 
+        # Updates the list of tiles in the active player's movement range
         self.active_player_move_range = list(tiles_in_range)
         for coord in self.active_player_move_range:
             tile = self.tile_objects.get(coord)
             if tile:
+
                 # --- Set the Primary Color (Movement Cost) ---
+                # Checks for special river movement ability
                 if "river_movement" in player.special_abilities and getattr(tile, 'river_data', None):
+                    
+                    # Tags the tile with a "good" movement color
                     tile.primary_move_color = "good"
                 else:
+
+                    # Gets the movement color based on the terrain type
                     terrain_label = player.terrain_movement_map.get(tile.terrain, None)
                     tile.primary_move_color = terrain_label
                 
                 # --- Set the Secondary Color (Hazards, etc.) ---
+                # Checks for any active climate effects
                 if self.active_climate_effect:
                     effect = self.active_climate_effect
+                    
+                    # Checks if the tile's terrain is a trigger for the current effect
                     if effect["trigger_type"] == "enter_terrain" and tile.terrain in effect["trigger_param"]:
+                        
                         # Set the secondary color to our "hazard" style
                         tile.secondary_move_color = "hazard"
                                                 
@@ -285,12 +333,16 @@ class GameManager:
         # Optimization: Only do work if the hovered tile has changed.
         if hovered_coord == self.last_hovered_coord:
             return
+        
+        # Stores the current hovered coordinate
         self.last_hovered_coord = hovered_coord
 
         # No matter what, if the hover coordinate has changed, the old path is invalid.
         # Clear any old path segments from the notebook.
         for key in self.path_keys:
             if key in self.notebook:
+
+                # Removes the old path from the notebook
                 del self.notebook[key]
         self.path_keys.clear()
 
@@ -311,40 +363,64 @@ class GameManager:
             return
 
         # If all checks pass, calculate and draw the new path.
+        # Sets the starting coordinate for pathfinding
         start_coord = (self.active_player.q, self.active_player.r)
+        
+        # Calculates the path using A*
         path = a_star_pathfind(
             self.tile_objects, start_coord, hovered_coord,
             self.persistent_state, self.active_player
         )
 
+        # Draws the path if it is valid
         if path and len(path) > 1:
+            
+            # Retrieves the z-index formula for path curves
             z_formula = self.persistent_state["pers_z_formulas"]['path_curve']
+            
+            # Iterates through each coordinate in the path
             for i, current_coord in enumerate(path):
+                
+                # Gets the previous and next coordinates to draw the curve segments
                 prev_coord = path[i-1] if i > 0 else None
                 next_coord = path[i+1] if i < len(path) - 1 else None
+                
+                # Calculates the z-value for the current segment
                 z_value = z_formula(current_coord[1])
+                
+                # Creates a unique key for the path segment drawable
                 key = f"path_curve_{i}"
                 self.notebook[key] = {
                     'type': 'path_curve', 'coord': current_coord,
                     'prev_coord': prev_coord, 'next_coord': next_coord, 'z': z_value
                 }
+
+                # Adds the key to the list of path keys
                 self.path_keys.append(key)
                 
     def _toggle_movement_overlay(self, is_visible):
         """Sets the visibility of the pre-calculated movement overlay."""
+        
         # If we're hiding the overlay, also clear the path
         if not is_visible:
             self.update_path_overlay(None)
 
+        # Iterates through all tiles in the movement range
         for coord in self.active_player_move_range:
             tile = self.tile_objects.get(coord)
             if tile:
+
+                # Toggles the movement_overlay flag on each tile
                 tile.movement_overlay = is_visible
 
     def add_resource_to_active_player_tile(self, resource_type="stone"):
         """Adds a resource to the tile the active player is currently on."""
         player = self.active_player
+
+        # Gets the active player's current coordinates
         coord = (player.q, player.r)
+
+        # Retrieves the tile object at the player's coordinates
         tile = self.tile_objects.get(coord)
 
         if not tile:
@@ -362,6 +438,8 @@ class GameManager:
     # 🌪️ Climate Wheel Methods
     def _initialize_climate_effects(self):
         """Populates the master list of all possible climate effects."""
+        
+        # Defines a dictionary of all possible climate effects
         self.master_climate_effects = {
             "desert_hazard": {
                 "description": "This turn, entering Desert terrain is hazardous.",
@@ -398,21 +476,33 @@ class GameManager:
 
     def _select_new_climate_effect(self):
         """Picks a random climate effect for the upcoming turn."""
+        
+        # Gets a list of all available effects
         available_effects = list(self.master_climate_effects.values())
+        
+        # Randomly selects one effect
         self.active_climate_effect = random.choice(available_effects)
         
-        print(f"[Climate] This turn's effect: {self.active_climate_effect['description']}")
+        # Prints a debug message with the selected effect
+        print(f"[Climate] 🌪️ This turn's effect: {self.active_climate_effect['description']}")
 
     def _check_climate_trigger_on_path(self, path):
         """Checks if any tile in a given path triggers the active climate effect."""
+        
+        # Exits if there is no active climate effect
         if not self.active_climate_effect:
             return
 
         effect = self.active_climate_effect
+
+        # Gets the list of hazardous terrains for the effect
         hazardous_terrains = effect.get("trigger_param", [])
         
+        # Iterates through the path, skipping the starting tile
         for coord in path[1:]: # Iterate through the path, skipping the starting tile
             tile = self.tile_objects.get(coord)
+
+            # Checks if the tile's terrain is a hazardous one
             if tile and tile.terrain in hazardous_terrains:
                 if DEBUG: print(f"[Climate] ⚠️ Hazard Triggered! Player entered {tile.terrain} at {coord}.")
                 # In the future, you would call self.draw_hazard_card() here
