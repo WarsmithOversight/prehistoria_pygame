@@ -2,7 +2,7 @@
 # Build a connected blob of N region tiles (radius R disks), then box, normalize, and oceanize.
 
 import random
-from shared_helpers import axial_distance, expand_region_seed, get_neighbors, a_star_pathfind, hex_to_pixel
+from shared_helpers import axial_distance, expand_region_seed, get_neighbors, hex_to_pixel
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants

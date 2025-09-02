@@ -4,21 +4,20 @@
 - [x] Add constant `USE_NATURAL_TERRAIN = True/False` to toggle between natural vs. boardgame tiles  
 - [x] Replace placeholder/dev tiles with authentic 37-hex Region Tiles  
 
-## 2. Quickstart Mode
-- [x] Add constant `QUICKSTART_MODE = True/False`  
-- [x] Skip menus/startup when enabled  
-- [ ] Default to “demo map” for testing  
-- [ ] Add `QUICKSTART_PRESET = "default_test_map"` for future scenarios  
+## 2. Startup
+- [x] Add Dev Quickboot
+- [ ] Add "Load Saved Map" feature
+- [x] Add Loading screen, splash screen and soundtrack
+- [x] Add welcome screen
 
-## 3. Hazard Wheel
-- [x] Implement “slot machine” style highlight animation (tick-tick-tick-CLUNK)  
-- [ ] Define wheel as rotating conditions (e.g. “enter region → trigger hazard”)  
-- [x] Decide: single condition per round vs. multiple  
+## 3. Add second species
+- [x] Player Token and json species entry
+- [ ] Unique movement ability
 
-## 4. AI Context Management
-- [ ] Add **Dependency Headers** to each script:  
-  - External Functions  
-  - External State  
-  - Notes/assumptions  
-- [ ] Use **Dependency Auditor Prompt** to generate Missing Context Checklists  
-- [ ] Copy results into headers so files become permanently “AI-ready”  
+## 4. Add milestone tokens
+- [ ] Add artwork
+- [ ] Add animations
+- [ ] Implement Evolution Points
+- [ ] Add sound effects
+- [ ] Add shadow and glow effect
+- [ ] Add educational pop-up windows

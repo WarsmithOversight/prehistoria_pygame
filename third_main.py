@@ -111,9 +111,10 @@ run_elevation_generation(tiledata, persistent_state)
 assign_biomes_to_regions(tiledata, persistent_state)
 
 # --- 🔭 Tag More Detailed Features ---
-tag_lowlands(tiledata, persistent_state)
 tag_mountain_range(tiledata)
 sculpt_mountain_ranges(tiledata, persistent_state)
+tag_lowlands(tiledata, persistent_state)
+
 tag_central_desert(tiledata, persistent_state)
 tag_adjacent_scrublands(tiledata, persistent_state)
 add_windward_and_leeward_tags(tiledata, persistent_state)

@@ -232,16 +232,15 @@ def _process_river_endpoints(tiledata, river_paths, persistent_state):
         if dest_tile.get("lowlands") and dest_tile.get("is_coast"):
             dest_tile["is_lake"] = True
             dest_tile["water_tile"] = True
+            dest_tile["passable"] = False
 
         # Check if the destination a mouth
         is_delta = dest_tile.get("is_ocean")
 
-        # If the river terminates on land (not a delta), tag it as a lake
-        # [ ] TODO: We need to make sure that rivers cannot terminate adjacent to ocean
-        # and must always finish flowing into the
         if not is_delta and not dest_tile.get("is_coast"):
             dest_tile["is_lake"] = True
             dest_tile["water_tile"] = True
+            dest_tile["passable"] = False
 
     print(f"[rivers] ✅ Processed river endpoints (deltas and lakes).")
 

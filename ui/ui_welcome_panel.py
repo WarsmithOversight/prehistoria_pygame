@@ -40,6 +40,7 @@ class UIWelcomePanel(BasePanel):
                     "ways to bite and breathe, all shaped by drought and sudden rain.\n"
                     "\n"
                     "Welcome to the Triassic—lean, volatile, and inventive. Here, the blueprints of the future are drafted in bone and storm."
+                    "\n"
                 ),
                 "style": {"font_size_key": "regular_medium", "text_color": (220, 220, 220), "align": "justify"},
                 "properties": {"max_width": 550}

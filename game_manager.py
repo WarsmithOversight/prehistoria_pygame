@@ -1,8 +1,8 @@
 # game_manager.py
 # This class orchestrates the game's state, including turns and active players.
 
-from shared_helpers import a_star_pathfind, find_reachable_tiles
 import random
+from pathfinding import generate_movement_overlay_data, calculate_movement_path
 
 DEBUG = True
 
@@ -106,12 +106,13 @@ class GameManager:
         start_tile = self.tile_objects.get(start_coord)
 
         if start_tile:
-            primary_move_color = player.terrain_movement_map.get(start_tile.terrain)
-            if primary_move_color in ["medium", "bad"]:
-
-                # Applies a movement penalty for this turn if starting on difficult terrain
+            # Ask the player for the interaction type of their starting tile.
+            interaction = player.get_interaction_for_tile(start_tile)
+             
+            # "medium" or "bad" terrain confers a movement penalty.
+            if interaction in ["medium", "bad"]:                
                 player.turn_movement_modifier = -1
-                print(f"[GameManager] ⚠️ Player {player.player_id} starts on difficult terrain. Movement reduced by 1.")
+                print(f"[GameManager] ⚠️ Player {player.player_id} ({player.species_name}) starts on difficult terrain. Movement reduced by 1.")
        
         # Sets the player's movement points for the current turn
         player.remaining_movement = player.movement_points + player.turn_movement_modifier
@@ -215,10 +216,13 @@ class GameManager:
         self.update_path_overlay(None)
 
         # Calculates a path from the start to the destination using A*
-        path_coords = a_star_pathfind(
-            self.tile_objects, start_coord, destination_coord, self.persistent_state, player
+        path_coords = calculate_movement_path(
+            player=player,
+            start_coord=start_coord,
+            end_coord=destination_coord,
+            tile_objects=self.tile_objects,
+            persistent_state=self.persistent_state
         )
-
         # Returns if no valid path was found
         if not path_coords:
             if DEBUG: print(f"[GameManager] ❌ A* pathfinding returned no valid path from {start_coord} to {destination_coord}.")
@@ -234,17 +238,18 @@ class GameManager:
             # Get the destination tile to check its properties
             destination_tile = self.tile_objects.get(destination_coord)
 
-            # Check if the destination is a "dead stop" tile
-            if destination_tile and destination_tile.primary_move_color in ["medium", "bad"]:
-                
-                # Landing on a high-cost tile consumes all remaining movement
-                player.remaining_movement = 0
-            else:
+             # Check if the destination is a "dead stop" tile by querying the profile
+            if destination_tile:
 
-                # Otherwise, just subtract the path length
-                # We subtract 1 because the path includes the starting tile
-                path_cost = len(path_coords) - 1
-                player.remaining_movement -= path_cost
+                # Ask the player for the interaction type of their destination.
+                interaction = player.get_interaction_for_tile(destination_tile)
+                # If it's a "medium" or "bad" tile, landing on it consumes all movement.
+                if interaction in ["medium", "bad"]:
+                    player.remaining_movement = 0
+                # Otherwise, it's a normal move, so subtract the path cost.
+                else:
+                    path_cost = len(path_coords) - 1
+                    player.remaining_movement -= path_cost
 
             # Sets the player's new coordinates
             player.q, player.r = destination_coord
@@ -278,6 +283,7 @@ class GameManager:
         )
                 
     def _calculate_active_player_movement(self):
+ 
         """Calculates the move range and tags tiles with their movement colors."""
         # Clear the color tags from the previous turn's range
         for coord in self.active_player_move_range:
@@ -289,34 +295,18 @@ class GameManager:
 
         player = self.active_player
 
-        # Finds all reachable tiles based on the player's remaining movement
-        tiles_in_range = find_reachable_tiles(
-            start_coord=(player.q, player.r),
-            max_cost=player.remaining_movement,
-            tile_objects=self.tile_objects,
-            player=player,
-            persistent_state=self.persistent_state
-        )
+        # Delegate the entire calculation to the pathfinding module.
+        overlay_data = generate_movement_overlay_data(player, self.tile_objects, self.persistent_state)
 
-        # Updates the list of tiles in the active player's movement range
-        self.active_player_move_range = list(tiles_in_range)
-        for coord in self.active_player_move_range:
+        # The manager's only job is to apply the results for rendering.
+        self.active_player_move_range = list(overlay_data.keys())
+        for coord, interaction_type in overlay_data.items():
             tile = self.tile_objects.get(coord)
             if tile:
+                # Set the primary color for the movement overlay.
+                tile.primary_move_color = interaction_type
+                # Set the secondary color for any climate hazards.
 
-                # --- Set the Primary Color (Movement Cost) ---
-                # Checks for special river movement ability
-                if "river_movement" in player.special_abilities and getattr(tile, 'river_data', None):
-                    
-                    # Tags the tile with a "good" movement color
-                    tile.primary_move_color = "good"
-                else:
-
-                    # Gets the movement color based on the terrain type
-                    terrain_label = player.terrain_movement_map.get(tile.terrain, None)
-                    tile.primary_move_color = terrain_label
-                
-                # --- Set the Secondary Color (Hazards, etc.) ---
                 # Checks for any active climate effects
                 if self.active_climate_effect:
                     effect = self.active_climate_effect
@@ -367,9 +357,12 @@ class GameManager:
         start_coord = (self.active_player.q, self.active_player.r)
         
         # Calculates the path using A*
-        path = a_star_pathfind(
-            self.tile_objects, start_coord, hovered_coord,
-            self.persistent_state, self.active_player
+        path = calculate_movement_path(
+            player=self.active_player,
+            start_coord=start_coord,
+            end_coord=hovered_coord,
+            tile_objects=self.tile_objects,
+            persistent_state=self.persistent_state
         )
 
         # Draws the path if it is valid
@@ -507,3 +500,17 @@ class GameManager:
                 if DEBUG: print(f"[Climate] ⚠️ Hazard Triggered! Player entered {tile.terrain} at {coord}.")
                 # In the future, you would call self.draw_hazard_card() here
                 return # Trigger only once per move
+            
+    def evolve_player_to_next_stage(self, player):
+            """
+            Evolves a player to the next species in their defined lineage.
+            This method now just "pokes" the player to handle its own evolution.
+            """
+            print(f"[GameManager] ✅ Triggering evolution for Player {player.player_id}...")
+            was_successful = player.evolve()
+            
+            if not was_successful:
+                return
+
+            # Recalculate movement for the current turn with new stats
+            self._calculate_active_player_movement()

@@ -392,7 +392,7 @@ class InGameScene:
             all_species_data = json.load(f)
         
         # Creates a list of player instances
-        players = [Player(player_id=1, species_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)]
+        players = [Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state), Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)]
 
         # Creates the camera and event bus controllers
         camera_controller = CameraController(self.persistent_state, self.variable_state, self.manager.tween_manager)

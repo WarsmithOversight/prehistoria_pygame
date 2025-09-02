@@ -1,25 +1,72 @@
 {
-  "frog": {
-    "lineage": "Frog",
-    "starting_species": "Frog",
-    "sprite": "frog",
-    "starting_region_preference": [
-      "floodplains",
-      "tropical"
-    ],
+  "Elkanobatrachus brodiei": {
+    "lineage": "frog",
+    "is_starter": true,
+    "evolves_to": "Notobatrachus degiustoi",
+    "sprite": "frog_01",
     "base_movement": 3,
-    "terrain_movement_map": {
-      "default": "medium",
-      "Plains": "good",
-      "Woodlands": "good",
-      "Marsh": "good",
-      "DesertDunes": "bad",
-      "Scrublands": "bad",
-      "Highlands": "medium",
-      "Hills": "medium"
-    },
-    "special_abilities": [
-      "river_movement"
-    ]
+    "pathfinding": {
+      "starting_location": {
+        "search_biomes": ["floodplains", "tropical"],
+        "preferred_terrain": ["Marsh"],
+        "optional_tags": []
+      },
+      "interactions": {
+        "good": ["Marsh", "Woodlands", "Lake"],
+        "medium": ["Plains", "Scrublands", "Highlands"],
+        "bad": ["DesertDunes"]
+      },
+      "profiles": ["grounded", "riverine", "lacustrine"]
+    }
+  },
+  "Notobatrachus degiustoi": {
+    "lineage": "frog",
+    "evolves_to": "Shelania pascuali",
+    "sprite": "frog_02",
+    "base_movement": 3,
+    "pathfinding": {
+      "interactions": {
+        "good": ["Marsh", "Woodlands", "Lake"],
+        "medium": ["Plains"],
+        "bad": ["DesertDunes", "Scrublands", "Highlands"]
+      },
+      "profiles": ["grounded", "riverine", "lacustrine"]
+    }
+  },
+  "Pulchrapollia": {
+    "lineage": "bird",
+    "is_starter": true,
+    "evolves_to": "Messelastur",
+    "sprite": "bird_01",
+    "base_movement": 3,
+    "pathfinding": {
+      "starting_location": {
+        "search_biomes": ["tropical", "temperate"],
+        "preferred_terrain": ["Woodlands"],
+        "optional_tags": []
+      },
+      "interactions": {
+        "good": ["Woodlands", "Highlands"],
+        "medium": ["Plains", "Scrublands", "Marsh"],
+        "bad": ["DesertDunes"]
+      },
+      "profiles": ["aerial"],
+      "overrules": {}
+    }
+  },
+  "Messelastur": {
+    "lineage": "bird",
+    "evolves_to": "Palaeoborus",
+    "sprite": "bird_02",
+    "base_movement": 5,
+    "pathfinding": {
+      "interactions": {
+        "good": ["Woodlands", "Highlands"],
+        "medium": ["Plains"],
+        "bad": ["DesertDunes", "Scrublands", "Marsh"]
+      },
+      "profiles": ["aerial"],
+      "overrules": {}
+    }
   }
 }

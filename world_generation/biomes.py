@@ -267,6 +267,27 @@ def _resolve_and_stamp_biomes(tiledata, persistent_state):
     
     if DEBUG: print(f"[biomes] ✅ Final biomes resolved and stamped on all tiles.")
 
+def _create_biome_map(tiledata, persistent_state):
+    """
+    Creates a dictionary mapping biome names to a list of tile coordinates.
+    This is used for efficient lookups later.
+    """
+    print("[Biomes] ✅ Generating biome_map for persistent state...")
+    biome_map = {}
+    
+    # This list should contain all possible biome flags used in your project
+    all_biome_types = ["tropical", "temperate", "arid", "floodplains"] 
+
+    for coord, tile_data in tiledata.items():
+        for biome_name in all_biome_types:
+            if tile_data.get(biome_name):
+                if biome_name not in biome_map:
+                    biome_map[biome_name] = []
+                biome_map[biome_name].append(coord)
+    
+    persistent_state["pers_biome_map"] = biome_map
+    print(f"[Biomes] ✅ biome_map created with {len(biome_map)} biomes.")
+
 # ──────────────────────────────────────────────────
 # 🚀 Orchestrator
 # ──────────────────────────────────────────────────
@@ -291,6 +312,7 @@ def assign_biomes_to_regions(tiledata, persistent_state):
     
     # 4. Resolve the winning biome and stamp it onto all tiles
     _resolve_and_stamp_biomes(tiledata, persistent_state)
+    _create_biome_map(tiledata, persistent_state)
 
     if DEBUG:
         print(f"[biomes] ✅ Biome assignment process complete.")

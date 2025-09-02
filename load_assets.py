@@ -32,9 +32,8 @@ def load_player_assets(assets_state, persistent_state):
         if not filename.endswith(".png"):
             continue
 
-        # Correctly parse the name, removing the variant and extension
-        # e.g., "frog_01.png" -> "frog"
-        species_name = filename.rsplit('_', 1)[0]
+        # Use the filename without the extension as the unique key (e.g., "frog_1")
+        species_sprite_name = filename.removesuffix('.png')
         
         full_path = os.path.join(assets_path, filename)
         sprite = pygame.image.load(full_path).convert_alpha()
@@ -66,7 +65,7 @@ def load_player_assets(assets_state, persistent_state):
                 sprite_by_zoom[z] = scaled
 
         # Store the complete asset data
-        player_assets[species_name] = {
+        player_assets[species_sprite_name] = {
             "sprite": sprite,
             "scale": sprite_by_zoom,
             "blit_offset": blit_offset,
