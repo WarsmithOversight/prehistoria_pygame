@@ -40,6 +40,9 @@ class Player:
             
         self.q, self.r = start_coord
 
+        # ✨ Initialize evolution points for the player.
+        self.evolution_points = 0
+
         # Initialize a pixel position for smooth movement
         self.pixel_pos = hex_to_pixel(self.q, self.r, persistent_state, {"var_current_zoom": 1.0, "var_render_offset": (0,0)})
         
@@ -170,12 +173,11 @@ class Player:
 
         # Create the dictionary that the renderer will use to draw the token
         notebook[token_key] = {
-            "type": "player_token",
+            "type": "artwork",
+            "asset_category": "player_assets",
+            "asset_key": species_sprite_name,
             "q": self.q,
             "r": self.r,      
-            "sprite": asset["sprite"],
-            "scale": asset["scale"],
-            "blit_offset": asset["blit_offset"],
             "z": z_value,
         }
 
@@ -193,3 +195,13 @@ class Player:
         # ✨ FIX: Call the correctly renamed function.
         self._update_species_data(next_species_name, self.all_species_data)
         return True
+    
+    def gain_evolution_points(self, points=1):
+        """
+        Increases the player's evolution points by a given amount and prints a confirmation.
+        """
+        # 📈 Add the specified number of points to the player's current total.
+        self.evolution_points += points
+        
+        # 🔊 Print a success message to the console for confirmation.
+        print(f"[Player {self.player_id}] ✅ Gained {points} EP! Total: {self.evolution_points}.")

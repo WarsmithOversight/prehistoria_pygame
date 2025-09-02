@@ -19,7 +19,7 @@ class UIPalettePanel(BasePanel):
         # ──────────────────────────────────────────────────
         # 🎨 Content & Style Definitions
         # ──────────────────────────────────────────────────
-        self.button_definitions = {
+        self.element_definitions = {
             "long_text_btn": {
                 "type": "button",
                 "text_options": ["A Button With Very Long Text"],
@@ -56,7 +56,12 @@ class UIPalettePanel(BasePanel):
         # 📐 Layout & Assembly
         # ──────────────────────────────────────────────────
         self.layout_blueprint = self.ui_layout()
-        self.dims = get_panel_dimensions(self.button_definitions, self.layout_blueprint, self.assets_state)
+        self.dims = get_panel_dimensions(
+            "PalettePanel", # Pass a unique name for the panel here
+            self.element_definitions,
+            self.layout_blueprint,
+            self.assets_state
+        )
         self.surface = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)
         self.rect = self.surface.get_rect(bottomleft=(20, self.persistent_state["pers_screen"].get_height() - 20))
         self.elements = self._create_and_place_elements()
@@ -83,7 +88,7 @@ class UIPalettePanel(BasePanel):
 
         for item in self.layout_blueprint:
             item_id = item.get("id")
-            element_def = self.button_definitions.get(item_id)
+            element_def = self.element_definitions.get(item_id)
             if not element_def: continue
 
             elem_dims_data = self.dims['element_dims'][item_id]
@@ -121,6 +126,6 @@ class UIPalettePanel(BasePanel):
     # ──────────────────────────────────────────────────
     def on_toggle_click(self, button_id):
         """Handles the logic for the multi-state toggle button."""
-        self.toggle_states[button_id] = (self.toggle_states[button_id] + 1) % len(self.button_definitions[button_id]["text_options"])
-        new_text = self.button_definitions[button_id]["text_options"][self.toggle_states[button_id]]
+        self.toggle_states[button_id] = (self.toggle_states[button_id] + 1) % len(self.element_definitions[button_id]["text_options"])
+        new_text = self.element_definitions[button_id]["text_options"][self.toggle_states[button_id]]
         self.buttons_by_id[button_id].update_text(new_text)

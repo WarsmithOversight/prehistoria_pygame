@@ -1,7 +1,7 @@
 # tween_manager.py
 # A flexible animation system using an orchestrator and composable "puzzle pieces".
 
-import pygame
+import pygame, math
 from shared_helpers import hex_to_pixel, hex_geometry, get_point_on_bezier_curve
 
 # ──────────────────────────────────────────────────
@@ -37,6 +37,7 @@ class TweenManager:
             'travel': TravelTween,
             'fade': FadeTween,
             'pan': PanTween,
+            'bob': BobTween,
         }
 
         # Maps drawable type strings to their corresponding updater classes
@@ -79,6 +80,14 @@ class TweenManager:
         
         # Filters out any tweens that have completed their animation
         self.active_tweens = [t for t in self.active_tweens if not t.is_finished]
+
+
+    def remove_tweens_by_target(self, target_dict):
+        """Finds and removes all active tweens that are acting on a specific target dictionary."""
+        # This is essential for cleaning up looping animations, like 'bob', when an object is removed.
+        initial_count = len(self.active_tweens)
+        self.active_tweens = [t for t in self.active_tweens if t.target_dict is not target_dict]
+        if DEBUG: print(f"[TweenManager] ✅ Removed {initial_count - len(self.active_tweens)} tweens for target.")
 
 # ──────────────────────────────────────────────────
 # ⚙️ Base Tween Class
@@ -306,6 +315,34 @@ class TravelTween(Tween):
                 # Resets progress and sets up the next segment
                 self.progress = 0.0
                 self._setup_segment()
+
+class BobTween(Tween):
+    """
+    A looping tween that creates a vertical "bobbing" motion on a drawable
+    by modifying its 'local_render_offset'.
+    """
+    def __init__(self, target_dict, updater, on_complete, amplitude, period):
+        # 📞 Call the parent class's constructor
+        super().__init__(target_dict, updater, on_complete)
+
+        # ⚙️ Store animation parameters
+        self.amplitude = amplitude
+        self.period = max(0.01, period) # Ensure period is not zero
+        self.timer = 0
+        
+        # 🔄 This is a looping animation, so its `is_finished` flag will always remain False.
+
+    def update(self, dt):
+        # ⏱️ Increment the timer by the delta time for this frame
+        self.timer += dt
+        
+        # 🌊 Calculate the vertical offset using a sine wave for smooth oscillation
+        # The formula completes one full cycle every 'period' seconds.
+        vertical_offset = self.amplitude * math.sin(2 * math.pi * self.timer / self.period)
+        
+        # ✍️ Use the updater to apply the new offset to the target drawable
+        # We're updating a tuple (x, y) for consistency, even though x is 0.
+        self.updater.on_update(self.target_dict, 'local_render_offset', (0, vertical_offset))
 
 # ──────────────────────────────────────────────────
 # 🎬 Tween Targets

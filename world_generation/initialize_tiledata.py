@@ -310,7 +310,23 @@ def initialize_tiledata(persistent_state, variable_state):
                 }
                 var_bounds.append((nq, nr))
 
-    # First, create a quick lookup map of {lattice_id: region_id}
+    # ──────────────────────────────────────────────────
+    # 🗺️ Create Region-to-Coordinate Map
+    # ──────────────────────────────────────────────────
+    # Create the final pers_region_map for easy lookups by other game systems.
+    pers_region_map = {}
+    for coord, tile in tiledata.items():
+        # Check if the tile belongs to a region.
+        region_id = tile.get("region_id")
+        if region_id is not None:
+            # If this is the first tile for this region, create a new list.
+            if region_id not in pers_region_map:
+                pers_region_map[region_id] = []
+            # Add the tile's coordinate to its region's list.
+            pers_region_map[region_id].append(coord)
+    persistent_state["pers_region_map"] = pers_region_map
+    print(f"[tiledata] ✅ Created pers_region_map with {len(pers_region_map)} regions.")
+    # Create a quick lookup map of {lattice_id: region_id}
     lattice_to_region_id_map = {
         center_data["lattice_id"]: center_data["region_id"]
         for center_data in persistent_state["pers_region_centers"]

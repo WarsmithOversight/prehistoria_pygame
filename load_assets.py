@@ -13,32 +13,50 @@ def load_png(path, with_alpha=True):
     return surf.convert_alpha() if with_alpha else surf.convert()
 
 # ⚙️ Initialization
+# Replace your existing load_player_assets function with this new version.
+
 def load_player_assets(assets_state, persistent_state):
     """
-    Loads and processes all player token sprites.
+    Loads and processes a specific list of player token sprites.
     """
+    # ──────────────────────────────────────────────────
+    # 🎨 Config & Constants
+    # ──────────────────────────────────────────────────
+    # ✅ Define exactly which player tokens to load.
+    # This list provides precise control over which assets are brought into the game.
+    TOKENS_TO_LOAD = [
+        "frog_01.png",
+        "bird_01.png",
+        # Add more token filenames here as they are created.
+    ]
+
     # ⚙️ Setup
-    assets_path = "sprites/player_token"
+    assets_path = "sprites/artwork"
     zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
     
-    # Define how large the token should be relative to the hex tile width
+    # Define how large the token should be relative to the hex tile width.
     TOKEN_SCALE_FACTOR = 0.55
     tile_hex_w = persistent_state["pers_tile_hex_w"]
 
     player_assets = {}
 
-    # 🔄 Load, Parse, and Scale
-    for filename in os.listdir(assets_path):
-        if not filename.endswith(".png"):
-            continue
+    # 🔄 Load, Parse, and Scale each token from the list
+    for filename in TOKENS_TO_LOAD:
+        
+        #  PATH Create the full path to the asset file.
+        full_path = os.path.join(assets_path, filename)
+        
+        # ROBUSTNESS Use a try-except block to handle missing files gracefully.
+        try:
+            sprite = pygame.image.load(full_path).convert_alpha()
+        except pygame.error as e:
+            print(f"[assets] ⚠️ Could not load player token '{filename}': {e}")
+            continue # Skip to the next token in the list
 
-        # Use the filename without the extension as the unique key (e.g., "frog_1")
+        # 🔑 Use the filename without the extension as the unique key (e.g., "frog_1").
         species_sprite_name = filename.removesuffix('.png')
         
-        full_path = os.path.join(assets_path, filename)
-        sprite = pygame.image.load(full_path).convert_alpha()
-
-        # --- Resize the base sprite to fit the hex tile ---
+        # 📏 Resize the base sprite to fit the hex tile.
         # Calculate the target width based on the hex width and our scale factor.
         target_w = int(tile_hex_w * TOKEN_SCALE_FACTOR)
         
@@ -50,10 +68,10 @@ def load_player_assets(assets_state, persistent_state):
         # Overwrite the original large sprite with the newly scaled one.
         sprite = pygame.transform.smoothscale(sprite, (target_w, target_h))
 
-        # Calculate a centered blit offset based on this specific sprite's dimensions
+        # 📍 Calculate a centered blit offset based on this specific sprite's dimensions.
         blit_offset = (-sprite.get_width() / 2, -sprite.get_height() / 2)
 
-        # Pre-scale the sprite for all zoom levels (Good work here!)
+        # 🖼️ Pre-scale the sprite for all zoom levels.
         sprite_by_zoom = {}
         ow, oh = sprite.get_size()
         for z in zoom_steps:
@@ -64,7 +82,7 @@ def load_player_assets(assets_state, persistent_state):
                 scaled = pygame.transform.smoothscale(sprite, (tw, th))
                 sprite_by_zoom[z] = scaled
 
-        # Store the complete asset data
+        # 💾 Store the complete asset data.
         player_assets[species_sprite_name] = {
             "sprite": sprite,
             "scale": sprite_by_zoom,
@@ -75,6 +93,43 @@ def load_player_assets(assets_state, persistent_state):
     print(f"[assets] ✅ Loaded {len(player_assets)} player token assets.")
 
 
+def load_indicator_asset(assets_state, persistent_state):
+    """Loads and scales the player-provided indicator asset from disk."""
+    # 🎨 How large the indicator should be relative to a hex tile's width.
+    INDICATOR_SCALE_FACTOR = 0.1
+
+    # ✨ FIX: Ensure the 'ui_assets' dictionary exists before we do anything else.
+    # This makes the function robust, even if it's called first.
+    if "ui_assets" not in assets_state:
+        assets_state["ui_assets"] = {}
+
+    try:
+        # ⚙️ Get the tile width to scale against.
+        tile_hex_w = persistent_state["pers_tile_hex_w"]
+
+        # Load the original, high-resolution image.
+        full_path = "sprites/artwork/indicator.png"
+        original_surface = pygame.image.load(full_path).convert_alpha()
+        
+        # 📏 Calculate the new size while maintaining the aspect ratio.
+        target_w = int(tile_hex_w * INDICATOR_SCALE_FACTOR)
+        original_w, original_h = original_surface.get_size()
+        aspect_ratio = original_h / original_w
+        target_h = int(target_w * aspect_ratio)
+        
+        # Overwrite the original surface with the new, scaled version.
+        indicator_surface = pygame.transform.smoothscale(original_surface, (target_w, target_h))
+        
+        # Store the finished asset in the global state.
+        assets_state["ui_assets"]["collectible_indicator"] = indicator_surface
+        
+        print(f"[Assets] ✅ Loaded and scaled '{full_path}' asset.")
+
+    except pygame.error as e:
+        print(f"[Assets] ❌ Failed to load 'sprites/artwork/indicator.png': {e}")
+        # Create a placeholder. This is now safe because we know 'ui_assets' exists.
+        assets_state["ui_assets"]["collectible_indicator"] = pygame.Surface((20, 20), pygame.SRCALPHA)
+
 def initialize_asset_states(persistent_state):
     """
     Calculates and stores universal, asset-related geometry and configurations
@@ -83,8 +138,8 @@ def initialize_asset_states(persistent_state):
         
     persistent_state["pers_tile_canvas_w"] = 256   # PNG width
     persistent_state["pers_tile_canvas_h"] = 384   # PNG height
-    persistent_state["pers_tile_hex_w"]    = 256   # Dimensions of artwork within PNG
-    persistent_state["pers_tile_hex_h"]    = 260   # Dimensions of artwork within PNG
+    persistent_state["pers_tile_hex_w"]    = 255   # Dimensions of artwork within PNG
+    persistent_state["pers_tile_hex_h"]    = 258   # Dimensions of artwork within PNG
     
     canvas_w = persistent_state["pers_tile_canvas_w"]
     canvas_h = persistent_state["pers_tile_canvas_h"]
@@ -99,7 +154,6 @@ def initialize_asset_states(persistent_state):
     
     if DEBUG:
         print(f"[assets] ✅ Universal asset states loaded.")
-
 
 # ──────────────────────────────────────────────────
 # 🎨 Helper Functions
@@ -995,3 +1049,160 @@ def load_all_ui_assets(assets_state):
     load_ui_textures(assets_state, ui_path)
     create_grayscale_ui_watermarks(assets_state)
     create_ui_border_assets(assets_state)
+
+# ──────────────────────────────────────────────────
+# 💎 Collectible Assets
+# ──────────────────────────────────────────────────
+
+def create_collectibles_assets(assets_state, persistent_state):
+    """
+    Assembler function that orchestrates the creation of all collectible assets.
+    It calls specialized functions to load the icon and generate the glow and shadow.
+    """
+    # ⚙️ Create the main dictionary to hold all collectible assets.
+    assets_state["collectible_assets"] = {}
+
+    # 📜 Call the specialized function to load and process the scroll icon.
+    assets_state["collectible_assets"]["icon"] = _load_collectible_icon(persistent_state)
+    
+    # ✨ Call the specialized function to procedurally generate the glow effect.
+    assets_state["collectible_assets"]["glow"] = _create_collectible_glow(persistent_state)
+    
+    # ⚫ Call the specialized function to procedurally generate the drop shadow.
+    assets_state["collectible_assets"]["shadow"] = _create_collectible_shadow(persistent_state)
+
+    print(f"[assets] ✅ Collectible assets assembled (Icon, Glow, Shadow).")
+
+def _load_collectible_icon(persistent_state):
+    """Loads, processes, and pre-scales the collectible's scroll icon."""
+    
+    # 🎨 Config & Constants
+    SCROLL_SCALE_FACTOR = 0.5  # New: Makes the icon 50% of the hex width.
+    
+    # ⚙️ Shared Setup
+    zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+    tile_hex_w = persistent_state["pers_tile_hex_w"]
+
+    try:
+        # 📜 Load the base scroll image from the file.
+        scroll_sprite_path = "sprites/artwork/scroll.png"
+        base_sprite = pygame.image.load(scroll_sprite_path).convert_alpha()
+
+        # 📏 Resize the base sprite to fit the desired scale on the hex tile.
+        target_w = int(tile_hex_w * SCROLL_SCALE_FACTOR)
+        original_w, original_h = base_sprite.get_size()
+        aspect_ratio = original_h / original_w
+        target_h = int(target_w * aspect_ratio)
+        scaled_base_sprite = pygame.transform.smoothscale(base_sprite, (target_w, target_h))
+
+        # 🖼️ Pre-scale the icon for every zoom level.
+        icon_by_zoom = {}
+        ow, oh = scaled_base_sprite.get_size()
+        for z in zoom_steps:
+            tw, th = max(1, int(ow * z)), max(1, int(oh * z))
+            icon_by_zoom[z] = pygame.transform.smoothscale(scaled_base_sprite, (tw, th))
+        
+        # 💾 Return the completed, pre-scaled icon assets.
+        return {
+            "scale": icon_by_zoom,
+            "blit_offset": (-scaled_base_sprite.get_width() / 2, -scaled_base_sprite.get_height() / 2)
+        }
+        
+    except pygame.error as e:
+        print(f"[assets] ❌ Error loading collectible icon: {e}")
+        return None
+
+def _create_collectible_glow(persistent_state):
+    """Procedurally generates a custom, pre-scaled blue glow effect."""
+   
+    # 🎨 Config & Constants
+    GLOW_COLOR = (70, 150, 255)
+    GLOW_MAX_ALPHA = 120
+    GLOW_SIZE_FACTOR = 0.6      # New: Slightly larger than the icon.
+    GLOW_FADE_PERCENT = 0.5
+    GLOW_VERTICAL_OFFSET = -10  # New: Reduced offset to better align with the icon.
+
+    # ⚙️ Shared Setup
+    zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+    tile_hex_w = persistent_state["pers_tile_hex_w"]
+
+    # 📐 Define Hexagon Geometry.
+    glow_hex_w = int(tile_hex_w * GLOW_SIZE_FACTOR)
+    glow_hex_h = int(glow_hex_w * (persistent_state["pers_tile_hex_h"] / tile_hex_w))
+    hex_surface = pygame.Surface((glow_hex_w, glow_hex_h), pygame.SRCALPHA)
+    center_x, center_y = glow_hex_w / 2, glow_hex_h / 2
+
+    # Get points for the outer edge and inner solid part of the glow.
+    outer_points = [
+        (center_x, center_y - glow_hex_h / 2), (center_x + glow_hex_w / 2, center_y - glow_hex_h / 4),
+        (center_x + glow_hex_w / 2, center_y + glow_hex_h / 4), (center_x, center_y + glow_hex_h / 2),
+        (center_x - glow_hex_w / 2, center_y + glow_hex_h / 4), (center_x - glow_hex_w / 2, center_y - glow_hex_h / 4)]
+    inner_scale = 1.0 - GLOW_FADE_PERCENT
+    inner_points = [(center_x + (x - center_x) * inner_scale, center_y + (y - center_y) * inner_scale) for x, y in outer_points]
+
+    # ✍️ Draw the feathered gradient glow.
+    GRADIENT_STEPS = 15
+    for i in range(GRADIENT_STEPS):
+        t = i / (GRADIENT_STEPS - 1)
+        alpha = int(GLOW_MAX_ALPHA * t)
+        poly_points = []
+        for j in range(6):
+            x = outer_points[j][0] * (1 - t) + inner_points[j][0] * t
+            y = outer_points[j][1] * (1 - t) + inner_points[j][1] * t
+            poly_points.append((x,y))
+        pygame.draw.polygon(hex_surface, (*GLOW_COLOR, alpha), poly_points)
+
+    # 🖼️ Pre-scale the glow for every zoom level, applying the vertical offset.
+    glow_by_zoom = {}
+    for z in zoom_steps:
+        scaled_w, scaled_h = max(1, int(glow_hex_w * z)), max(1, int(glow_hex_h * z))
+        scaled_glow = pygame.transform.smoothscale(hex_surface, (scaled_w, scaled_h))
+        final_canvas = pygame.Surface((scaled_w, scaled_h + abs(int(GLOW_VERTICAL_OFFSET * z))), pygame.SRCALPHA)
+        final_canvas.blit(scaled_glow, (0, 0 if GLOW_VERTICAL_OFFSET > 0 else abs(int(GLOW_VERTICAL_OFFSET * z))))
+        glow_by_zoom[z] = final_canvas
+
+    # 💾 Return the completed, pre-scaled glow assets.
+    return {
+        "scale": glow_by_zoom,
+        "blit_offset": (-glow_hex_w / 2, (-glow_hex_h / 2) + GLOW_VERTICAL_OFFSET)
+    }
+
+def _create_collectible_shadow(persistent_state):
+    """Procedurally generates a soft, oval, pre-scaled drop shadow."""
+   
+    # 🎨 Config & Constants
+    SHADOW_HORIZONTAL_DIAMETER = 100 # New: A good width for a 128px icon.
+    SHADOW_VERTICAL_DIAMETER = 50    # New: A flattened oval for a nice 3D effect.
+    SHADOW_MAX_ALPHA = 70
+    SHADOW_FEATHER_STEPS = 15
+
+    # ⚙️ Shared Setup
+    zoom_steps = build_zoom_steps(persistent_state["pers_zoom_config"])
+
+    # Create a master surface for the shadow.
+    shadow_surface = pygame.Surface((SHADOW_HORIZONTAL_DIAMETER, SHADOW_VERTICAL_DIAMETER), pygame.SRCALPHA)
+    
+    # ✍️ Draw the feathered oval shadow by layering ellipses.
+    for i in range(SHADOW_FEATHER_STEPS, 0, -1):
+        t = i / SHADOW_FEATHER_STEPS
+        alpha = int(SHADOW_MAX_ALPHA * (t**2))
+        w, h = int(SHADOW_HORIZONTAL_DIAMETER * t), int(SHADOW_VERTICAL_DIAMETER * t)
+        
+        temp_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.ellipse(temp_surf, (0,0,0,alpha), temp_surf.get_rect())
+
+        shadow_surface.blit(temp_surf, ((SHADOW_HORIZONTAL_DIAMETER - w) // 2, (SHADOW_VERTICAL_DIAMETER - h) // 2), special_flags=pygame.BLEND_RGBA_ADD)
+
+    # 🖼️ Pre-scale the shadow for every zoom level.
+    shadow_by_zoom = {}
+    ow, oh = shadow_surface.get_size()
+    for z in zoom_steps:
+        tw, th = max(1, int(ow * z)), max(1, int(oh * z))
+        shadow_by_zoom[z] = pygame.transform.smoothscale(shadow_surface, (tw, th))
+    
+    # 💾 Return the completed, pre-scaled shadow assets.
+    return {
+        "scale": shadow_by_zoom,
+        "blit_offset": (-SHADOW_HORIZONTAL_DIAMETER / 2, -SHADOW_VERTICAL_DIAMETER / 2)
+    }
+

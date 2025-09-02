@@ -12,6 +12,7 @@ from world_generation.elevation import run_elevation_generation
 from world_generation.rivers import run_river_generation
 from world_generation.biomes import assign_biomes_to_regions
 from world_generation.tile import create_tile_objects_from_data
+from collectibles import seed_collectibles
 from audio_manager import AudioManager
 from tween_manager import TweenManager
 
@@ -283,6 +284,9 @@ class LoadingScene:
             # and put the return value into our queue.
             def worker():
 
+                # 💿 Load all sound effects from the specified directory.
+                self.audio_manager.load_sfx_directory("sfx")
+
                 # Plays the game's soundtrack
                 self.audio_manager.play_music("soundtrack.mp3")
 
@@ -324,7 +328,18 @@ class LoadingScene:
         total_start_time = time.time()
         
         # Defines a list of asset loading steps
-        asset_steps = [("Load Tileset Assets", load_tileset_assets, (self.assets_state, self.persistent_state)),("Load Coast Assets", load_coast_assets, (self.assets_state, self.persistent_state)),("Load River Assets", load_river_assets, (self.assets_state, self.persistent_state)),("Load River Mouth Assets", load_river_mouth_assets, (self.assets_state, self.persistent_state)),("Load River End Assets", load_river_end_assets, (self.assets_state, self.persistent_state)),("Load Player Assets", load_player_assets, (self.assets_state, self.persistent_state)),("Create Glow Masks", create_glow_mask, (self.persistent_state, self.assets_state)),("Create Tinted Glows", create_tinted_glow_masks, (self.persistent_state, self.assets_state)),]
+        asset_steps = [
+            ("Load Tileset Assets", load_tileset_assets, (self.assets_state, self.persistent_state)),
+            ("Load Coast Assets", load_coast_assets, (self.assets_state, self.persistent_state)),
+            ("Load River Assets", load_river_assets, (self.assets_state, self.persistent_state)),
+            ("Load River Mouth Assets", load_river_mouth_assets, (self.assets_state, self.persistent_state)),
+            ("Load River End Assets", load_river_end_assets, (self.assets_state, self.persistent_state)),
+            ("Load Player Assets", load_player_assets, (self.assets_state, self.persistent_state)),
+            ("Create Collectible Assets", create_collectibles_assets, (self.assets_state, self.persistent_state)),
+            ("Create Glow Masks", create_glow_mask, (self.persistent_state, self.assets_state)),
+            ("Create Tinted Glows", create_tinted_glow_masks, (self.persistent_state, self.assets_state)),
+            ("Load Indicator Asset", load_indicator_asset, (self.assets_state, self.persistent_state)),
+            ]
         
         # Iterates through the list and runs each asset loading step
         for name, func, args in asset_steps: self._run_timed_step(name, func, args)
@@ -360,7 +375,7 @@ class LoadingScene:
 
         # Returns the final tile objects
         return tile_objects
-    
+        
     def on_exit(self):
 
         # Cleans up the splash screen from the notebook when the scene is exited
@@ -384,22 +399,37 @@ class InGameScene:
         # Initializes a dictionary to hold the game's controllers
         self.controllers = {}
         
+# scene_manager.py -> InGameScene
+
     def on_enter(self, data=None):
         print("[InGameScene] ✅ Entered. Initializing controllers in a paused state...")
         
-        # Loads species data from a JSON file
+        # 📜 Load species data from a JSON file.
         with open("species.json", "r") as f:
             all_species_data = json.load(f)
-        
-        # Creates a list of player instances
-        players = [Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state), Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)]
 
-        # Creates the camera and event bus controllers
+        # 🐣 Create player instances first, so we know their starting locations.
+        players = [
+            Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state),
+            Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)
+        ]
+        
+        # 💎 Seed collectibles, now avoiding the players' starting regions.
+        collectible_instances = seed_collectibles(
+            self.persistent_state, self.notebook['tile_objects'],
+            self.notebook, self.manager.tween_manager, players
+        )
+
+        # ⚙️ Create core controllers.
         camera_controller = CameraController(self.persistent_state, self.variable_state, self.manager.tween_manager)
         event_bus = EventBus()
  
-        # Creates the game manager instance
-        game_manager = GameManager(players, camera_controller, self.notebook['tile_objects'], event_bus, self.manager.tween_manager, self.notebook, self.persistent_state, self.variable_state)
+        # 🕹️ Create the main game manager instance.
+        game_manager = GameManager(
+            players, collectible_instances, self.manager.scenes["LOADING"].audio_manager,
+            camera_controller, self.notebook['tile_objects'], event_bus, 
+            self.manager.tween_manager, self.notebook, self.persistent_state, self.variable_state
+        )
  
         # Assembles the full dictionary of controllers
         self.controllers = {
@@ -424,7 +454,7 @@ class InGameScene:
         
         # Creates the welcome panel UI
         self.welcome_panel = UIWelcomePanel(self.persistent_state, self.assets_state, self)
-    
+
     def start_game(self):
        """Called by the welcome panel's continue button."""
        print("[InGameScene] ✅ Continue clicked. Game is now active.")
@@ -507,6 +537,7 @@ class InGameScene:
                 self.welcome_panel.update(self.notebook)
         else:
             self.controllers['ui'].update(self.notebook)
+            self.controllers['game'].update(dt)
 
         # Updates the camera controller regardless of the game state
         self.controllers['camera'].update(self.persistent_state, self.variable_state)

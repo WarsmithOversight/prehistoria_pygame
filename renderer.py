@@ -4,6 +4,7 @@
 from shared_helpers import hex_to_pixel, hex_geometry
 import pygame, hashlib
 from load_assets import get_font
+import pygame, hashlib, math
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -25,8 +26,12 @@ def initialize_render_states(persistent_state, notebook):
     vert_offset = lambda r: r * Z_ROW_MULTIPLIER
     persistent_state["pers_z_formulas"] = {
         "tile":          lambda r: 1.0 + vert_offset(r),
-        "path_curve":    lambda r: 1.0 + vert_offset(r) + 0.0001,
-        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0002,
+        "collectible_shadow": lambda r: 1.0 + vert_offset(r) + 0.00071,
+        "collectible_glow":   lambda r: 1.0 + vert_offset(r) + 0.00072,
+        "collectible_icon":   lambda r: 1.0 + vert_offset(r) + 0.00073,
+        "path_curve":    lambda r: 1.0 + vert_offset(r) + 0.0008,
+        "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0009,
+        "indicator":     lambda r: 2.0,
         "debug_icon":    lambda r: 2.0 + 0.1,
         "terrain_tag":   lambda r: 2.0 + 0.2,
         "coordinate":    lambda r: 2.0 + 0.3,
@@ -34,7 +39,7 @@ def initialize_render_states(persistent_state, notebook):
         "region_border": lambda r: 2.0 + 0.5,
         "debug_gap":     lambda r: 2.0 + 0.6,
         "ui_panel":      lambda r: 3.0,
-        "splash_screen": lambda r: 3.9, # Drawn behind most things, but on top of black
+        "splash_screen": lambda r: 3.9,
         "fade_overlay":  lambda r: 4.0, # Highest z-value, always on top
     }
 
@@ -505,35 +510,7 @@ def edge_line_type_interpreter(screen, drawable, persistent_state, assets_state,
 
     # Draw the line on the screen
     pygame.draw.line(screen, color, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), thickness)
-
-def player_token_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
-    """Renders the player token using pixel_pos if available, otherwise q,r."""
-
-    current_zoom = variable_state.get("var_current_zoom", 1.0)
-
-    if 'pixel_pos' in drawable:
-        # The token is animating, use the precise pixel position.
-        base_px, base_py = drawable['pixel_pos']
-        # Apply camera transforms to the world-space pixel position
-        offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
-        px = (base_px * current_zoom) + offset_x
-        py = (base_py * current_zoom) + offset_y
-    else:
-        # The token is static, calculate position from its hex coordinates.
-        px, py = hex_to_pixel(drawable['q'], drawable['r'], persistent_state, variable_state)
-
-    # 🖼️ Get the correctly pre-scaled sprite and its offset
-    sprite_map = drawable.get("scale") or {1.0: drawable["sprite"]}
-    final = sprite_map.get(current_zoom)
-    off_x, off_y = drawable["blit_offset"]
-
-    if final:
-        # Scale the blit offset for the current zoom level
-        offset_scale = current_zoom
-        ox = int(off_x * offset_scale)
-        oy = int(off_y * offset_scale)
-        screen.blit(final, (px + ox, py + oy))
-
+        
 def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
     """Helper to draw a quadratic Bézier curve."""
     points = []
@@ -675,6 +652,107 @@ def ui_panel_interpreter(screen, drawable, persistent_state, assets_state, varia
     if surface and rect:
         screen.blit(surface, rect)
 
+def artwork_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """
+    A single, generic interpreter for all map-based artwork (players, collectibles, etc.).
+    It uses keys within the drawable to look up the correct asset data.
+    """
+    # ⚙️ Get shared state
+    current_zoom = variable_state.get("var_current_zoom", 1.0)
+    
+    # 🎨 Look up the asset data using keys from the drawable itself.
+    asset_category = drawable.get("asset_category")
+    asset_key = drawable.get("asset_key")
+    
+    asset_data = assets_state.get(asset_category, {}).get(asset_key)
+    if not asset_data:
+        if DEBUG: print(f"[renderer] ⚠️ Missing asset data for '{asset_category}.{asset_key}'")
+        return
+
+    # 📍 Calculate screen position from the hex coordinate.
+    px, py = hex_to_pixel(drawable['q'], drawable['r'], persistent_state, variable_state)
+    
+    # 🤸 Apply local tweening offset (e.g., bobbing) if it exists.
+    # The offset is in world pixels, so it must be scaled by the current zoom.
+    if 'pixel_pos' in drawable:
+        # Handle positional tweens (like player movement) by overriding the hex position.
+        world_px, world_py = drawable['pixel_pos']
+        offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
+        px = (world_px * current_zoom) + offset_x
+        py = (world_py * current_zoom) + offset_y
+    
+    local_offset_x, local_offset_y = drawable.get('local_render_offset', (0, 0))
+    px += local_offset_x * current_zoom
+    py += local_offset_y * current_zoom
+    
+    # 🖼️ Get the correctly pre-scaled sprite and its blit offset from the asset data.
+    sprite_map = asset_data.get("scale", {})
+    final_sprite = sprite_map.get(current_zoom)
+    
+    if final_sprite:
+        off_x, off_y = asset_data["blit_offset"]
+        
+        # 📏 The blit offset is relative to the asset's center, so it also needs scaling.
+        ox = int(off_x * current_zoom)
+        oy = int(off_y * current_zoom)
+        
+        # 🎨 Blit the final sprite to the screen at its calculated position.
+        screen.blit(final_sprite, (px + ox, py + oy))
+
+def render_indicator(screen, drawable, persistent_state, assets_state, variable_state):
+    """Renders the indicator orbiting the player at a fixed radius."""
+    # 🎨 Config: Adjust this radius to change the diameter of the "train tracks."
+    # This value is in world pixels, so it will scale with zoom.
+    INDICATOR_ORBIT_RADIUS = 120
+
+    # ⚙️ Get Asset and State
+    original_asset = assets_state["ui_assets"]["collectible_indicator"]
+    angle_deg = drawable['angle']
+    current_zoom = variable_state["var_current_zoom"]
+
+    # 🗺️ Calculate Orbital Anchor Point
+    # The GameManager now provides the exact world-space anchor point.
+    # We just need to convert it to screen space by applying camera zoom and offset.
+    world_anchor_x, world_anchor_y = drawable['anchor_world_pos']
+    cam_offset_x, cam_offset_y = variable_state.get("var_render_offset", (0, 0))
+    
+    center_x = (world_anchor_x * current_zoom) + cam_offset_x
+    center_y = (world_anchor_y * current_zoom) + cam_offset_y
+
+    # Convert the angle to radians for trigonometric functions.
+    angle_rad = math.radians(angle_deg)
+    
+    # Calculate the offset from the center based on the angle and our desired radius.
+    # The radius is scaled by zoom to maintain a consistent visual distance.
+    radius = INDICATOR_ORBIT_RADIUS * current_zoom
+    offset_x = radius * math.cos(angle_rad)
+    offset_y = -radius * math.sin(angle_rad)
+
+    # The final anchor point is the tile's center plus our calculated offset.
+    screen_anchor_x = center_x + offset_x
+    screen_anchor_y = center_y + offset_y
+
+    # 🔄 Rotate the Asset Around its Pivot
+    final_angle = angle_deg
+    rotated_asset = pygame.transform.rotate(original_asset, final_angle)
+    rotated_rect = rotated_asset.get_rect()
+
+    # To place the pivot on the anchor, we find the vector from the sprite's center 
+    # to its pivot point, rotate it, and use it as an offset.
+    # Original pivot is at (0, height/2). Original center is at (width/2, height/2).
+    # The vector from center to pivot is thus (-width/2, 0).
+    offset_vector = pygame.math.Vector2(-original_asset.get_width() / 2, 0)
+    rotated_offset = offset_vector.rotate(-final_angle)
+
+    # The center of our blit rect should be the anchor point PLUS the offset vector.
+    # This effectively moves the center of the image so the pivot can land on the anchor.
+    blit_center_x = screen_anchor_x + rotated_offset.x
+    blit_center_y = screen_anchor_y + rotated_offset.y
+
+    # ✨ Draw the asset on screen.
+    rotated_rect.center = (blit_center_x, blit_center_y)
+    screen.blit(rotated_asset, rotated_rect)
+
 # ──────────────────────────────────────────────────
 # ⌨️ Interpreter Dispatch
 # ──────────────────────────────────────────────────
@@ -684,10 +762,11 @@ TYPEMAP = {
     "circle": circle_type_interpreter,
     "text": text_type_interpreter,
     "edge_line": edge_line_type_interpreter,
-    "player_token": player_token_interpreter,
+    "artwork": artwork_interpreter,
     "path_curve": path_curve_interpreter,
     "debug_triangle": debug_triangle_interpreter,
     "ui_panel": ui_panel_interpreter,
     "splash_screen": splash_screen_interpreter,
     "fade_overlay": fade_overlay_interpreter,
+    "indicator": render_indicator,
    }

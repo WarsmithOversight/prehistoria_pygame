@@ -15,7 +15,7 @@ BUTTON_CORNER_CHAOS_FACTOR = 3
 UI_ELEMENT_PADDING = (20, 20)
 INNER_CHAOS_OFFSET_DIVISOR = 2
 
-def get_panel_dimensions(element_definitions, layout_blueprint, assets_state):
+def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets_state):
     """
     Calculates all necessary dimensions for a complex procedural UI panel and its elements.
     This is the single source of truth for UI layout geometry.
@@ -109,8 +109,9 @@ def get_panel_dimensions(element_definitions, layout_blueprint, assets_state):
     final_panel_h = panel_content_h + dims["bark_border_tile_dim"]
     dims["final_panel_size"] = (final_panel_w, final_panel_h)
 
+    # 🔊 Print a dynamic success message with useful dev info.
     if DEBUG:
-        print(f"[ui_dimensions] ✅ Dimensions calculated.")
+        print(f"[ui_dimensions] ✅ Dimensions for '{panel_id}' panel ({len(layout_blueprint)} elements) calculated. Final size: {final_panel_w}x{final_panel_h}.")
     return dims
 
 def _calculate_wrapped_text_height(text, font, max_width):

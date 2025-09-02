@@ -63,7 +63,12 @@ class UIWelcomePanel(BasePanel):
         ]
         
         # 1. Calculate final dimensions for the panel and all its child elements
-        self.dims = get_panel_dimensions(self.element_definitions, self.layout_blueprint, self.assets_state)
+        self.dims = get_panel_dimensions(
+            "WelcomePanel", # Pass a unique name for the panel here
+            self.element_definitions,
+            self.layout_blueprint,
+            self.assets_state
+        )
 
         # 2. Assemble the main panel surface
         self.surface = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)

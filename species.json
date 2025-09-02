@@ -12,8 +12,8 @@
         "optional_tags": []
       },
       "interactions": {
-        "good": ["Marsh", "Woodlands", "Lake"],
-        "medium": ["Plains", "Scrublands", "Highlands"],
+        "good": ["Marsh", "Woodlands", "Lake", "Plains"],
+        "medium": ["Scrublands", "Highlands"],
         "bad": ["DesertDunes"]
       },
       "profiles": ["grounded", "riverine", "lacustrine"]
@@ -46,8 +46,8 @@
         "optional_tags": []
       },
       "interactions": {
-        "good": ["Woodlands", "Highlands"],
-        "medium": ["Plains", "Scrublands", "Marsh"],
+        "good": ["Woodlands", "Highlands", "Plains"],
+        "medium": ["Scrublands", "Marsh"],
         "bad": ["DesertDunes"]
       },
       "profiles": ["aerial"],

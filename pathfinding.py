@@ -173,47 +173,45 @@ def _get_tile_interaction(player, tile):
 
 def _Dijkstra_search(player, start_coord, max_movement, move_validator, tile_objects, persistent_state):
     """A generic Dijkstra algorithm that requires a `move_validator` function."""
-    # A dictionary to store the cost to reach each tile.
+    
+    # Stores the cost to reach any tile we can land on.
     cost_so_far = {start_coord: 0}
+    
+    # Stores the cost to traverse any tile, even ones we can't land on (for aerial).
+    # This prevents getting stuck in loops or re-visiting tiles with a worse path.
+    cost_to_traverse = {start_coord: 0}
+    
     # A priority queue of tiles to visit, starting with the origin.
     frontier = [(0, start_coord)]
 
     while frontier:
-        # Get the tile with the lowest cost from the frontier.
         current_cost, current_coord = heapq.heappop(frontier)
 
-        # If we've found a longer path to this tile already, skip it.
-        if current_cost > cost_so_far[current_coord]:
+        if current_cost > cost_to_traverse[current_coord]:
             continue
 
-        # Explore neighbors.
         for next_coord in get_neighbors(current_coord[0], current_coord[1], persistent_state):
             tile = tile_objects.get(next_coord)
             if not tile:
                 continue
 
-            # The cost to move to any valid neighbor is always 1.
             new_cost = current_cost + 1
+            if new_cost > max_movement:
+                continue
 
-            # Check if we can afford to land on this tile.
-            if new_cost <= max_movement:
+            # ✨ FIX 1: Check if the tile is a valid LANDING spot first.
+            # For your frog, this will correctly return True for a "medium" tile.
+            if move_validator(tile, is_destination=True):
+                if next_coord not in cost_so_far or new_cost < cost_so_far[next_coord]:
+                    cost_so_far[next_coord] = new_cost
 
-                # First, check if the tile is a valid landing spot.
-                if move_validator(tile, is_destination=True):
-
-                    # If it is, add it to our results.
-                    if next_coord not in cost_so_far or new_cost < cost_so_far[next_coord]:
-                        cost_so_far[next_coord] = new_cost
-
-                        # A tile is only added to the frontier (for further exploration)
-                        # if it's not a "dead stop" for the current player.
-                        interaction = _get_tile_interaction(player, tile)
-                        is_grounded = "grounded" in player.pathfinding_profiles
-
-                        # Aerial units can explore from any valid tile.
-                        # Grounded units can only explore from "good" tiles.
-                        if not is_grounded or interaction == "good":
-                            heapq.heappush(frontier, (new_cost, next_coord))
+            # ✨ FIX 2: Separately, check if we should explore FROM this tile.
+            # This uses the traversal rule (is_destination=False). For your frog, this will
+            # correctly return False for a "medium" tile, stopping the search there.
+            if move_validator(tile, is_destination=False):
+                if next_coord not in cost_to_traverse or new_cost < cost_to_traverse[next_coord]:
+                    cost_to_traverse[next_coord] = new_cost
+                    heapq.heappush(frontier, (new_cost, next_coord))
 
     # The final set of reachable tiles are all the keys in our cost map.
     return set(cost_so_far.keys())

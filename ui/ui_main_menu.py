@@ -19,8 +19,8 @@ class MainMenuPanel(BasePanel):
         # Stores a reference to the main menu scene
         self.scene = scene
 
-        # Defines the properties of the menu buttons
-        self.button_definitions = {
+        # Defines the properties of the UI elements in this panel
+        self.element_definitions = {
             "new_world": {
                 "type": "button",
                 "text_options": ["New World"],
@@ -49,7 +49,12 @@ class MainMenuPanel(BasePanel):
         ]
 
         # Calculates the dimensions of the panel and its elements
-        self.dims = get_panel_dimensions(self.button_definitions, self.layout_blueprint, self.assets_state)
+        self.dims = get_panel_dimensions(
+            "MainMenuPanel", # Pass a unique name for the panel here
+            self.element_definitions,
+            self.layout_blueprint,
+            self.assets_state
+        )
         
         # Creates the surface for the panel
         self.surface = assemble_organic_panel(self.dims["final_panel_size"], self.dims["panel_background_size"], self.assets_state)
@@ -77,7 +82,7 @@ class MainMenuPanel(BasePanel):
  
         for item in self.layout_blueprint:
             item_id = item.get("id")
-            element_def = self.button_definitions.get(item_id)
+            element_def = self.element_definitions.get(item_id)
             if not element_def: continue
  
             elem_dims_data = self.dims['element_dims'][item_id]

@@ -1,19 +1,22 @@
 # game_manager.py
 # This class orchestrates the game's state, including turns and active players.
 
-import random
+import random, math
 from pathfinding import generate_movement_overlay_data, calculate_movement_path
+from shared_helpers import axial_distance, hex_to_pixel
 
 DEBUG = True
 
 class GameManager:
     """Manages the overall game state, turn progression, and active player."""
 
-    def __init__(self, players, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state):
+    def __init__(self, players, collectibles, audio_manager, camera_controller, tile_objects, event_bus, tween_manager, notebook, persistent_state, variable_state):
         
         # Stores references to the core game systems
         self.tween_manager = tween_manager
         self.players = players
+        self.collectibles = collectibles
+        self.audio_manager = audio_manager
         self.camera_controller = camera_controller
         self.tile_objects = tile_objects
         self.event_bus = event_bus
@@ -45,23 +48,48 @@ class GameManager:
         self.master_climate_effects = {}
         self.active_climate_effect = None
 
+        # Stores the coordinate of the nearest collectible for the current turn.
+        self.nearest_collectible_coord = None
+
         # Populates the list of all possible climate effects
         self._initialize_climate_effects()
 
-        # Pre-calculates the movement range for the first player at game start
-        self._calculate_active_player_movement()
+    def update(self, dt):
+        """The main update loop for the GameManager, called every frame."""
+        # We only need to update the indicator when the game is active.
+        if not self.is_paused:
+            self._update_nearest_collectible_indicator()
 
-        # Announce the start of the game
-        print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
-        
-        # Selects the first climate effect
-        self._select_new_climate_effect()
-        
     @property
     def active_player(self):
         """A convenient property to get the current active player object."""
         # Returns the player object at the current active player index
         return self.players[self.active_player_index]
+
+    def _start_first_turn(self):
+        """Handles the sequence of events to begin the first turn of the game."""
+        
+        # 🌪️ Select the first climate effect for the game.
+        self._select_new_climate_effect()
+
+        # 🗺️ Calculate the initial movement range for the first player.
+        self._calculate_active_player_movement()
+
+        # 🎯 Find the nearest collectible for the turn's objective.
+        self._find_and_store_nearest_collectible()
+
+        # 👉 Select the active player to make their overlay visible.
+        self._select_player(self.active_player)
+
+        # 🎥 Center the camera on the starting player.
+        self.camera_controller.center_on_tile(
+            self.active_player.q, self.active_player.r,
+            self.persistent_state, self.variable_state
+        )
+
+        # 📢 Announce the start of the game.
+        print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
+
 
     def advance_turn(self):
         """Advances to the next player's turn and updates the turn counter."""
@@ -120,6 +148,9 @@ class GameManager:
         # Pre-calculates the movement range for the new active player
         self._calculate_active_player_movement()
 
+        # 🎯 Find the nearest collectible for the new turn's objective.
+        self._find_and_store_nearest_collectible()
+
         # Select the new active player
         self._select_player(self.active_player)
 
@@ -128,18 +159,14 @@ class GameManager:
 
     def unpause(self):
         """Starts the first turn and allows the game to proceed."""
-        
-        # Exits if the game is not paused
+        # 🛡️ Guard clause to prevent this from running more than once.
         if not self.is_paused: return
 
-        # Unpauses the game
+        # 🟢 Unpause the game state. This is the crucial missing piece.
         self.is_paused = False
-
-        # Centers the camera on the active player
-        self.camera_controller.center_on_tile(
-            self.active_player.q, self.active_player.r,
-            self.persistent_state, self.variable_state
-        )
+        
+        # ▶️ Begin the first turn sequence.
+        self._start_first_turn()
 
     def handle_click(self, coord):
         """Handles clicks for player selection, deselection, and movement commands."""
@@ -237,9 +264,24 @@ class GameManager:
         def on_move_complete():
             # Get the destination tile to check its properties
             destination_tile = self.tile_objects.get(destination_coord)
-
-             # Check if the destination is a "dead stop" tile by querying the profile
             if destination_tile:
+
+                # 💎 Check for and process collectibles on the destination tile
+                # Find if a collectible instance exists at this coordinate.
+                collected_item = next((c for c in self.collectibles if (c.q, c.r) == destination_coord), None)
+                if collected_item:
+
+                    # 🔊 Play a random sound for collecting.
+                    self.audio_manager.play_sfx(blacklist=["game_over_cartoon_2.wav", "error.wav", "try_again.wav", "earn_points.wav"])
+
+                    # ✨ Grant the player their reward.
+                    player.gain_evolution_points()
+                    
+                    # 🗑️ Tell the collectible instance to clean up its own graphics and animations.
+                    collected_item.cleanup(self.notebook, self.tween_manager)
+                    
+                    # - Remove the instance from our active list.
+                    self.collectibles.remove(collected_item)
 
                 # Ask the player for the interaction type of their destination.
                 interaction = player.get_interaction_for_tile(destination_tile)
@@ -514,3 +556,60 @@ class GameManager:
 
             # Recalculate movement for the current turn with new stats
             self._calculate_active_player_movement()
+
+    def _find_and_store_nearest_collectible(self):
+        """Finds the active player's nearest collectible and stores its coordinate."""
+        player = self.active_player
+        self.nearest_collectible_coord = None # Reset first
+
+        if not self.collectibles:
+            return
+
+        # Use axial_distance for grid-based distance, which is more accurate here.
+        nearest_collectible = min(
+            self.collectibles,
+            key=lambda c: axial_distance(player.q, player.r, c.q, c.r)
+        )
+        self.nearest_collectible_coord = (nearest_collectible.q, nearest_collectible.r)
+        print(f"[GameManager] ✅ Nearest collectible for Player {player.player_id} is at {self.nearest_collectible_coord}.")
+
+    def _update_nearest_collectible_indicator(self):
+        """Calculates the angle to the nearest collectible and updates the drawable."""
+        indicator_key = "collectible_indicator"
+        player = self.active_player
+        player_token = self.notebook.get(player.token_key)
+
+        # 🧹 Cleanup: If there's no target, remove the indicator.
+        if not self.nearest_collectible_coord or not player_token:
+            if indicator_key in self.notebook:
+                del self.notebook[indicator_key]
+            return
+            
+        # 📍 Get Player and Target positions in WORLD coordinates.
+        # This consistency is key to fixing the disappearing indicator.
+        world_variable_state = {"var_current_zoom": 1.0, "var_render_offset": (0,0)}
+
+        # Prioritize the animated world position if the player is moving.
+        if 'pixel_pos' in player_token: 
+            player_pos = player_token['pixel_pos'] 
+        else: 
+            player_pos = hex_to_pixel(player.q, player.r, self.persistent_state, world_variable_state)
+
+        # Get the target's world position.
+        target_pos = hex_to_pixel(self.nearest_collectible_coord[0], self.nearest_collectible_coord[1], self.persistent_state, world_variable_state)
+ 
+        # 📐 Calculate Angle
+        dx = target_pos[0] - player_pos[0]
+        dy = target_pos[1] - player_pos[1]
+        angle_deg = math.degrees(math.atan2(-dy, dx))
+
+        # 📔 Update the Notebook
+        # The renderer only needs the player's base location and the angle.
+        z_formula = self.persistent_state["pers_z_formulas"]["indicator"]
+        self.notebook[indicator_key] = {
+            "type": "indicator",
+            "q": player.q, "r": player.r, # Keep q,r for z-sorting
+            "anchor_world_pos": player_pos, # Pass the definitive world position to the renderer
+            "angle": angle_deg,
+            "z": z_formula(player.r)
+        }
