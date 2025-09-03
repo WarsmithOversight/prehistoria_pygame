@@ -7,48 +7,23 @@ DEBUG = True
 
 class UIPalettePanel(BasePanel):
     """A dynamically-sized panel for testing UI components, built with the modern layout system."""
-    def __init__(self, persistent_state, assets_state, tile_objects):
+    def __init__(self, persistent_state, assets_state, tile_objects, event_bus):
 
         # ⚙️ Core Setup
         super().__init__(persistent_state, assets_state)
         self.drawable_key = "ui_palette_panel"
-        self.buttons_by_id = {}
-        self.toggle_states = {"toggle_btn": 0}
+        self.event_bus = event_bus
         self.tile_objects = tile_objects # Store for action callbacks
 
         # ──────────────────────────────────────────────────
         # 🎨 Content & Style Definitions
         # ──────────────────────────────────────────────────
         self.element_definitions = {
-            "long_text_btn": {
+            "trigger_hazard_btn": {
                 "type": "button",
-                "text_options": ["A Button With Very Long Text"],
-                "style": { "font_size_key": "regular_medium", "text_color": (255, 255, 255), "align": "center" },
-                "action": lambda: print("[UI Palette] Clicked: Long Text")
-            },
-            "small_text_btn": {
-                "type": "button",
-                "text_options": ["Small Font"],
-                "style": { "font_size_key": "regular_small", "text_color": (200, 220, 255), "align": "center" },
-                "action": lambda: print("[UI Palette] Clicked: Small Font")
-            },
-            "left_align_btn": {
-                "type": "button",
-                "text_options": ["Aligned Left"],
-                "style": { "font_size_key": "regular_medium", "text_color": (255, 255, 255), "align": "left" },
-                "action": lambda: print("[UI Palette] Clicked: Left Align")
-            },
-            "right_align_btn": {
-                "type": "button",
-                "text_options": ["Aligned Right"],
-                "style": { "font_size_key": "regular_medium", "text_color": (255, 255, 255), "align": "right" },
-                "action": lambda: print("[UI Palette] Clicked: Right Align")
-            },
-            "toggle_btn": {
-                "type": "button",
-                "text_options": ["Toggle: Option A", "Toggle: Option B", "Toggle: Option C"],
-                "style": { "font_size_key": "regular_medium", "text_color": (220, 255, 220), "align": "center" },
-                "action": lambda: self.on_toggle_click("toggle_btn")
+                "text_options": ["Hazard"],
+                "style": { "font_size_key": "regular_small", "text_color": (255, 200, 200), "align": "center" },
+                "action": lambda: self.event_bus.post("DEBUG_TRIGGER_HAZARD")
             }
         }
 
@@ -70,43 +45,47 @@ class UIPalettePanel(BasePanel):
     def ui_layout(self):
         """Defines the high-level layout blueprint for this panel."""
         return [
-            {"id": "long_text_btn"},
-            {"id": "small_text_btn"},
-            {"id": "left_align_btn"},
-            {"id": "right_align_btn"},
-            {"id": "toggle_btn"}
+            [{"id": "trigger_hazard_btn"}]
         ]
-
     def _create_and_place_elements(self):
         """Creates and positions all UI elements based on the calculated dimensions."""
         elements = []
         content_w, content_h = self.dims["panel_background_size"]
-        pad_x, pad_y = UI_ELEMENT_PADDING
+        pad_x, pad_y = self.assets_state.get("UI_ELEMENT_PADDING", (20, 20))
 
-        start_x = (self.surface.get_width() - content_w) / 2
         current_y = (self.surface.get_height() - content_h) / 2 + pad_y
+        start_x_offset = (self.surface.get_width() - content_w) / 2
 
-        for item in self.layout_blueprint:
-            item_id = item.get("id")
-            element_def = self.element_definitions.get(item_id)
-            if not element_def: continue
-
-            elem_dims_data = self.dims['element_dims'][item_id]
-            elem_w, elem_h = elem_dims_data["final_size"]
-            elem_x = start_x + (content_w - elem_w) / 2 # Center horizontally
-            element_rect = pygame.Rect(elem_x, current_y, elem_w, elem_h)
-
-            button = Button(
-                rect=element_rect,
-                text=element_def["text_options"][0],
-                assets_state=self.assets_state,
-                style=element_def["style"],
-                dims=self.dims,
-                callback=element_def["action"]
-            )
-            elements.append(button)
-            self.buttons_by_id[item_id] = button
-            current_y += elem_h + pad_y
+        for i, row_items in enumerate(self.layout_blueprint):
+            if not isinstance(row_items, list): row_items = [row_items]
+ 
+            # Center the entire row horizontally within the content area
+            row_width = self.dims['row_widths'][i]
+            current_x = start_x_offset + (content_w - row_width) / 2
+ 
+            for item in row_items:
+                item_id = item.get("id")
+                element_def = self.element_definitions.get(item_id)
+                if not element_def: continue
+ 
+                elem_dims_data = self.dims['element_dims'][item_id]
+                elem_w, elem_h = elem_dims_data["final_size"]
+                element_rect = pygame.Rect(current_x, current_y, elem_w, elem_h)
+ 
+                button = Button(
+                    rect=element_rect,
+                    text=element_def["text_options"][0],
+                    assets_state=self.assets_state,
+                    style=element_def["style"],
+                    dims=self.dims,
+                    callback=element_def["action"]
+                )
+                elements.append(button)
+                current_x += elem_w + pad_x
+            
+            # Move to the next row's vertical position
+            row_height = self.dims['row_heights'][i]
+            current_y += row_height + pad_y
         return elements
 
     def handle_events(self, events, mouse_pos):
@@ -124,8 +103,3 @@ class UIPalettePanel(BasePanel):
     # ──────────────────────────────────────────────────
     # 🎬 Action Callbacks
     # ──────────────────────────────────────────────────
-    def on_toggle_click(self, button_id):
-        """Handles the logic for the multi-state toggle button."""
-        self.toggle_states[button_id] = (self.toggle_states[button_id] + 1) % len(self.element_definitions[button_id]["text_options"])
-        new_text = self.element_definitions[button_id]["text_options"][self.toggle_states[button_id]]
-        self.buttons_by_id[button_id].update_text(new_text)

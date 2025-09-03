@@ -967,13 +967,13 @@ def create_ui_border_assets(assets_state):
         {
             "source_key": "bark_full_res",      # Which texture to use
             "output_key": "bark_border_pieces",  # What to name the final asset group
-            "border_width": 12,                  # The thickness of this border style
+            "border_width": 10,                  # The thickness of this border style
             "desaturation": 0.0                  # How much to desaturate (0.0 = none)
         },
         {
             "source_key": "stone_full_res",
             "output_key": "stone_border_pieces",
-            "border_width": 6,                 
+            "border_width": 4,                 
             "desaturation": 0.6                  # Apply a slight desaturation for a grayer look
         }
     ]
@@ -1206,3 +1206,92 @@ def _create_collectible_shadow(persistent_state):
         "blit_offset": (-SHADOW_HORIZONTAL_DIAMETER / 2, -SHADOW_VERTICAL_DIAMETER / 2)
     }
 
+# ──────────────────────────────────────────────────
+# 🖼️ Family Portrait Assets
+# ──────────────────────────────────────────────────
+
+def load_family_portrait_assets(assets_state):
+    """
+    Loads layered family portrait assets for the UI.
+    Each portrait is in a species-named subfolder and consists of a single
+    background layer and multiple, numbered family member layers.
+    """
+    # 🎨 Config & Constants
+    portraits_base_path = "sprites/artwork/family_portraits"
+    PORTRAIT_SCALE_FACTOR = 0.5 # Adjust the size of the portraits. 1.0 is original size.
+    
+    # ⚙️ Initialize the dictionary in the global assets state.
+    assets_state["family_portraits"] = {}
+
+    #  ROBUSTNESS: Check if the base directory exists before proceeding.
+    if not os.path.isdir(portraits_base_path):
+        print(f"[assets] ⚠️  Family portraits directory not found, skipping: '{portraits_base_path}'")
+        return
+
+    # 📂 Iterate through each species' subfolder in the portraits directory.
+    for species_name in os.listdir(portraits_base_path):
+        species_dir_path = os.path.join(portraits_base_path, species_name)
+        
+        # Ensure we're only processing directories.
+        if not os.path.isdir(species_dir_path):
+            continue
+
+        # Prepare temporary storage for this species' layers.
+        background_layer = None
+        member_layers_unsorted = []
+        
+        # 🖼️ Load each PNG layer file within the species' folder.
+        for filename in os.listdir(species_dir_path):
+            if not filename.endswith(".png"):
+                continue
+
+            full_path = os.path.join(species_dir_path, filename)
+            
+            try:
+               # 1. Load the original image from disk with alpha transparency.
+               original_surface = pygame.image.load(full_path).convert_alpha()
+
+               # 2. Scale the image to its final size.
+               if PORTRAIT_SCALE_FACTOR != 1.0:
+                   original_w, original_h = original_surface.get_size()
+                   new_w = max(1, int(original_w * PORTRAIT_SCALE_FACTOR))
+                   new_h = max(1, int(original_h * PORTRAIT_SCALE_FACTOR))
+                   scaled_surface = pygame.transform.smoothscale(original_surface, (new_w, new_h))
+               else:
+                   scaled_surface = original_surface
+
+               # 3. ✨ Directly use the scaled surface with its original colors and alpha.
+               final_surface = scaled_surface
+
+               # 4. Parse the filename and store the final, processed surface.
+               base_name = filename.removesuffix('.png')
+               if base_name.endswith("_bg"):
+                   background_layer = final_surface
+               else:
+                   parts = base_name.split('_')
+                   if len(parts) > 1 and parts[-1].isdigit():
+                       member_index = int(parts[-1])
+                       member_layers_unsorted.append((member_index, final_surface))
+
+            except pygame.error as e:
+                print(f"[assets] ❌ Could not load portrait layer '{filename}': {e}")
+                continue # Skip to the next file
+        
+        # 🔢 Sort the family members numerically by their parsed index.
+        member_layers_unsorted.sort(key=lambda item: item[0])
+        
+        # Create the final, clean list of sorted surfaces.
+        sorted_member_surfaces = [surface for index, surface in member_layers_unsorted]
+
+        # 💾 Store the final, structured data for this species.
+        if background_layer and sorted_member_surfaces:
+            assets_state["family_portraits"][species_name] = {
+                "background": background_layer,
+                "members": sorted_member_surfaces,
+            }
+            if DEBUG:
+                print(f"[assets]   - Processed '{species_name}': Found background and {len(sorted_member_surfaces)} members.")
+        else:
+            print(f"[assets] ⚠️  Skipping portrait for '{species_name}': Missing background or member layers.")
+    
+    print(f"[assets] ✅ Loaded {len(assets_state['family_portraits'])} complete family portraits.")

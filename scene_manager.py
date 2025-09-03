@@ -23,6 +23,7 @@ from event_bus import EventBus
 from player import Player
 from game_manager import GameManager
 from ui.ui_manager import UIManager
+from hazard_deck import HazardDeck
 
 DEBUG = True
 DEV_FADE_OUT_DURATION = 1  # seconds
@@ -335,6 +336,7 @@ class LoadingScene:
             ("Load River Mouth Assets", load_river_mouth_assets, (self.assets_state, self.persistent_state)),
             ("Load River End Assets", load_river_end_assets, (self.assets_state, self.persistent_state)),
             ("Load Player Assets", load_player_assets, (self.assets_state, self.persistent_state)),
+            ("Load Portrait Assets", load_family_portrait_assets, (self.assets_state,)),
             ("Create Collectible Assets", create_collectibles_assets, (self.assets_state, self.persistent_state)),
             ("Create Glow Masks", create_glow_mask, (self.persistent_state, self.assets_state)),
             ("Create Tinted Glows", create_tinted_glow_masks, (self.persistent_state, self.assets_state)),
@@ -408,10 +410,16 @@ class InGameScene:
         with open("species.json", "r") as f:
             all_species_data = json.load(f)
 
+        # ⚙️ Create the EventBus.
+        event_bus = EventBus()
+
+        # 🃏 Create the one and only hazard deck for the game.
+        hazard_deck = HazardDeck()
+
         # 🐣 Create player instances first, so we know their starting locations.
         players = [
-            Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state),
-            Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state)
+            Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus),
+            Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus)
         ]
         
         # 💎 Seed collectibles, now avoiding the players' starting regions.
@@ -422,7 +430,6 @@ class InGameScene:
 
         # ⚙️ Create core controllers.
         camera_controller = CameraController(self.persistent_state, self.variable_state, self.manager.tween_manager)
-        event_bus = EventBus()
  
         # 🕹️ Create the main game manager instance.
         game_manager = GameManager(
@@ -430,13 +437,19 @@ class InGameScene:
             camera_controller, self.notebook['tile_objects'], event_bus, 
             self.manager.tween_manager, self.notebook, self.persistent_state, self.variable_state
         )
+
+        # 🎨 Create the UI Manager, passing it the event bus and the starting player.
+        ui_manager = UIManager(
+            self.persistent_state, self.assets_state, event_bus, players[0],
+            self.notebook, self.manager.tween_manager, hazard_deck
+        )
  
         # Assembles the full dictionary of controllers
         self.controllers = {
             'camera': camera_controller,
             'interactor': MapInteractor(),
             'event_bus': event_bus,
-            'ui': UIManager(self.persistent_state, self.assets_state, self.notebook['tile_objects']),
+            'ui': ui_manager,
             'game': game_manager
         }
        
@@ -523,8 +536,11 @@ class InGameScene:
             else:
                 game_manager.update_path_overlay(None)
             for event in events:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                    game_manager.advance_turn()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        game_manager.advance_turn()
+                    elif event.key == pygame.K_q:
+                        self.controllers['ui'].toggle_hazard_queue()
     
     def update(self, dt):
 
@@ -532,13 +548,15 @@ class InGameScene:
         if not self.controllers: return
 
         # Updates the game based on the paused state
+        # 1. Update systems that run regardless of game state.
+        self.controllers['camera'].update(self.persistent_state, self.variable_state)
+        self.controllers['ui'].update(self.notebook) # This is the key fix.
+ 
+        # 2. Update systems based on the paused state.
         if self.controllers['game'].is_paused:
+            # While paused, we also need to update the welcome panel.
             if self.welcome_panel:
                 self.welcome_panel.update(self.notebook)
         else:
-            self.controllers['ui'].update(self.notebook)
+            # Once unpaused, update the main game logic.
             self.controllers['game'].update(dt)
-
-        # Updates the camera controller regardless of the game state
-        self.controllers['camera'].update(self.persistent_state, self.variable_state)
-

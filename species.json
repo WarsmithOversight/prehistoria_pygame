@@ -1,9 +1,10 @@
 {
-  "Elkanobatrachus brodiei": {
+  "Triadobatrachus": {
     "lineage": "frog",
+    "mya": "250",
     "is_starter": true,
-    "evolves_to": "Notobatrachus degiustoi",
     "sprite": "frog_01",
+    "max_population": 5,
     "base_movement": 3,
     "pathfinding": {
       "starting_location": {
@@ -17,12 +18,14 @@
         "bad": ["DesertDunes"]
       },
       "profiles": ["grounded", "riverine", "lacustrine"]
-    }
+    },
+    "evolves_to": "Prosalirus"
   },
-  "Notobatrachus degiustoi": {
+  "Prosalirus": {
     "lineage": "frog",
-    "evolves_to": "Shelania pascuali",
-    "sprite": "frog_02",
+    "mya": "190",
+    "sprite": "frog_01",
+    "max_population": 5,
     "base_movement": 3,
     "pathfinding": {
       "interactions": {
@@ -31,14 +34,31 @@
         "bad": ["DesertDunes", "Scrublands", "Highlands"]
       },
       "profiles": ["grounded", "riverine", "lacustrine"]
-    }
+    },
+    "evolves_to": "Notobatrachus"
+    },
+  "Notobatrachus": {
+    "lineage": "frog",
+    "mya": "179",
+    "sprite": "frog_01",
+    "base_movement": 3,
+    "pathfinding": {
+      "interactions": {
+        "good": ["Marsh", "Woodlands", "Lake"],
+        "medium": ["Plains"],
+        "bad": ["DesertDunes", "Scrublands", "Highlands"]
+      },
+      "profiles": ["grounded", "riverine", "lacustrine"]
+    },
+    "evolves_to": "None"
   },
   "Pulchrapollia": {
     "lineage": "bird",
     "is_starter": true,
     "evolves_to": "Messelastur",
     "sprite": "bird_01",
-    "base_movement": 3,
+    "max_population": 5,
+    "base_movement": 2,
     "pathfinding": {
       "starting_location": {
         "search_biomes": ["tropical", "temperate"],
@@ -58,6 +78,7 @@
     "lineage": "bird",
     "evolves_to": "Palaeoborus",
     "sprite": "bird_02",
+    "max_population": 5,
     "base_movement": 5,
     "pathfinding": {
       "interactions": {

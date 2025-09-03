@@ -70,7 +70,7 @@ while scene_manager.running:
 
     # 🎨 Render
     screen.fill((0, 0, 0))
-    render_giant_z_pot(screen, notebook.get('tile_objects', {}), notebook, persistent_state, assets_state, variable_state)
+    render_giant_z_pot(screen, notebook, persistent_state, assets_state, variable_state)
     
     pygame.display.flip()
 

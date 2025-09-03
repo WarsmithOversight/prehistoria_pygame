@@ -36,6 +36,9 @@ class GameManager:
         # Pauses the game by default at the start
         self.is_paused = True
 
+        # 👂 Subscribe to events
+        self.event_bus.subscribe("DEBUG_TRIGGER_HAZARD", self.on_debug_trigger_hazard)
+
         # Initializes variables for player selection and movement
         self.selected_player = None
         self.is_player_moving = False
@@ -90,13 +93,12 @@ class GameManager:
         # 📢 Announce the start of the game.
         print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
 
-
     def advance_turn(self):
         """Advances to the next player's turn and updates the turn counter."""
         
         # Exits the function if the game is paused
         if self.is_paused: return
-        
+
         # 🌪️ Select a new climate effect for the turn
         self._select_new_climate_effect()
 
@@ -112,6 +114,9 @@ class GameManager:
 
         # Advance to the next player in the list
         self.active_player_index = (self.active_player_index + 1) % len(self.players)
+
+        # 📢 Announce that the active player has officially changed.
+        self.event_bus.post("ACTIVE_PLAYER_CHANGED", self.active_player)
 
         # Increment the main turn counter only when a full round is complete
         if self.active_player_index == 0:
@@ -272,7 +277,7 @@ class GameManager:
                 if collected_item:
 
                     # 🔊 Play a random sound for collecting.
-                    self.audio_manager.play_sfx(blacklist=["game_over_cartoon_2.wav", "error.wav", "try_again.wav", "earn_points.wav"])
+                    self.audio_manager.play_sfx(blacklist=["game_over_cartoon_2.wav", "error.wav", "try_again.wav", "earn_points.wav", "secret_area_unlock_1", "soft_fail"])
 
                     # ✨ Grant the player their reward.
                     player.gain_evolution_points()
@@ -613,3 +618,19 @@ class GameManager:
             "angle": angle_deg,
             "z": z_formula(player.r)
         }
+
+    def on_debug_trigger_hazard(self, data=None):
+        """Handler for the debug button to kick off a hazard event."""
+        self.start_hazard_event(source_element_id="UIPalettePanel Button")
+ 
+    def start_hazard_event(self, source_element_id="Unknown"):
+        """
+        Initiates the hazard selection process. This is the central method
+        for starting a hazard event.
+        """
+        # 🔊 Play a random sound for collecting.
+        self.audio_manager.play_sfx(blacklist=["earn_points.wav", "secret_area_unlock_1"])
+
+        # 📢 Publish a game-wide event to notify any interested systems (like the UI).
+        self.event_bus.post("HAZARD_EVENT_START")
+        print(f"[GameManager] ⚡ HAZARD_EVENT_START triggered by '{source_element_id}'.")

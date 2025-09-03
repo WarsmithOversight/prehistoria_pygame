@@ -11,70 +11,133 @@ class Player:
     Represents a single player, holding their state, stats, and
     managing their token on the board.
     """
-    def __init__(self, player_id, lineage_name, all_species_data, tile_objects, notebook, assets_state, persistent_state):
+    # ────────────────────────────────────────────────── #
+    # ⚙️ Initialization & State Management
+    # ──────────────────────────────────────────────────
+    def __init__(self, player_id, lineage_name, all_species_data, tile_objects, notebook, assets_state, persistent_state, event_bus):
 
-        # ⚙️ Core State & Data
+        # ⚙️ Set one-time player attributes that persist through evolutions
         self.player_id = player_id
         self.all_species_data = all_species_data
-        self.token_key = f"player_token_{self.player_id}" 
+        self.token_key = f"player_token_{self.player_id}"
+        self.evolution_points = 0
+        self.event_bus = event_bus
         
+        # 🏞️ Define a local helper to find the starting species
         def _find_starter_species_for_lineage(lineage_name, all_species_data):
             """Finds the species name that is the starter for a given lineage."""
+            # Iterate through all available species
             for species_name, species_data in all_species_data.items():
+                # Check if the species matches the lineage and is marked as a starter
                 if species_data.get("lineage") == lineage_name and species_data.get("is_starter"):
                     return species_name
+            # Return None if no starter is found
             return None
 
-        # Find the specific starter species from the requested lineage
+        # 🐢 Find the specific starter species from the requested lineage
         starter_species_name = _find_starter_species_for_lineage(lineage_name, all_species_data)
         if not starter_species_name:
             raise ValueError(f"Could not find a starter species for lineage '{lineage_name}'")
 
-        # ✨ FIX: Call the correctly renamed function.
-        self._update_species_data(starter_species_name, all_species_data)
+        # ✨ Apply the initial species data to the player object
+        self._update_species_data(starter_species_name)
         
-        # Find a valid starting location
+        # ❤️ Initialize population for the first time
+        # This is only done once; evolutions will preserve current_population
+        self.current_population = float(self.max_population)
+
+        # 🗺️ Find a valid starting location on the game board
         start_coord = self._find_start_location(tile_objects, persistent_state)
         if not start_coord:
             raise RuntimeError(f"Could not find a valid starting tile for player {player_id} ({self.species_name})")
-            
+        
+        # Set the player's initial axial coordinates
         self.q, self.r = start_coord
-
-        # ✨ Initialize evolution points for the player.
-        self.evolution_points = 0
-
-        # Initialize a pixel position for smooth movement
+        
+        # 🎨 Initialize a pixel position for smooth animation
         self.pixel_pos = hex_to_pixel(self.q, self.r, persistent_state, {"var_current_zoom": 1.0, "var_render_offset": (0,0)})
         
-        # Create the visual token in the game's notebook
+        # 🖌️ Create the visual token in the game's notebook
         self._create_token_drawable(notebook, assets_state, persistent_state)
+        
+        # Report successful creation
         print(f"[Player] ✅ Player {self.player_id} ({self.species_name}) created at {self.q},{self.r}.")
 
-    def _update_species_data(self, species_name, all_species_data):
-        """A helper to set or refresh all stats from a species data block."""
-        self.species_name = species_name
-        self.species_data = all_species_data[self.species_name]
-        pathfinding_data = self.species_data.get("pathfinding", {})
+    def evolve(self):
+        """
+        Evolves the player to the next species in its lineage. This refreshes
+        max_population but preserves current_population.
+        Returns True if evolution was successful, False otherwise.
+        """
+        # 🐢 Get the name of the species to evolve into from the current species data
+        next_species_name = self.species_data.get("evolves_to")
+
+        # ❌ Check if the evolution path exists
+        if not next_species_name or next_species_name not in self.all_species_data:
+            print(f"[Player] ⚠️ {self.species_name} is at the end of its lineage and cannot evolve further.")
+            return False
         
-        # Refresh core stats
+        # ✨ Update all species-specific data to the new species
+        self._update_species_data(next_species_name)
+        
+        # Evolution was successful
+        return True
+
+    # ────────────────────────────────────────────────── #
+    # 헬 Helpers
+    # ──────────────────────────────────────────────────
+    def _update_species_data(self, species_name):
+        """
+        A helper to set or refresh all stats derived from a species data block.
+        This is called on initialization and each time the player evolves.
+        """
+        # 🐢 Set the new species name and get its corresponding data block
+        self.species_name = species_name
+        self.species_data = self.all_species_data[self.species_name]
+        
+        # ❤️ Refresh core stats from the new species data
+        self.max_population = self.species_data.get("max_population")
         self.movement_points = self.species_data["base_movement"]
         self.remaining_movement = self.movement_points 
         self.turn_movement_modifier = 0
 
-        # Parse all pathfinding rules directly into the player object.
+        # 🗺️ Parse all pathfinding rules into quickly accessible attributes
+        pathfinding_data = self.species_data.get("pathfinding", {})
         self.pathfinding_profiles = pathfinding_data.get("profiles", [])
         self.movement_overrules = pathfinding_data.get("overrules", {})
         
-        # Compile the terrain interactions into a simple lookup dictionary.
+        # 🧭 Compile the terrain interactions into a simple lookup dictionary for performance
         self.terrain_interactions = {}
         interactions = pathfinding_data.get("interactions", {})
         for interaction_type, terrain_list in interactions.items():
             for terrain in terrain_list:
                 self.terrain_interactions[terrain] = interaction_type
        
-        print(f"[Player] ✅ Player {self.player_id} is now a {self.species_name}.")
+        # Report the change
+        print(f"[Player] ✅ Player {self.player_id} species set to {self.species_name}.")
 
-    # ✨ NEW: Add the helper method for GameManager.
+    def take_population_damage(self, amount):
+        """
+        Reduces current population by a given amount and posts an event if a
+        change occurred.
+        """
+        # ❤️ Store the population before applying damage to check for changes.
+        old_population = self.current_population
+ 
+        # 🛡️ Decrease the current population, ensuring it doesn't go below zero.
+        self.current_population = max(0, self.current_population - amount)
+ 
+        # 📢 If the population actually changed, announce it to the event bus.
+        if self.current_population != old_population:
+            print(f"[Player] 💔 Player {self.player_id} took {amount} damage. Population is now {self.current_population}.")
+            
+            self.event_bus.post("PLAYER_POPULATION_CHANGED", {
+                "player_id": self.player_id,
+                "species_name": self.species_name,
+                "current_population": self.current_population,
+                "max_population": self.max_population
+            })
+
     def get_interaction_for_tile(self, tile):
         """
         Determines the consequential interaction type for a tile, respecting overrides.
@@ -180,21 +243,6 @@ class Player:
             "r": self.r,      
             "z": z_value,
         }
-
-    def evolve(self):
-        """
-        Evolves the player to the next species in its lineage.
-        Returns True if evolution was successful, False otherwise.
-        """
-        next_species_name = self.species_data.get("evolves_to")
-
-        if not next_species_name or next_species_name not in self.all_species_data:
-            print(f"[Player] ⚠️ {self.species_name} is at the end of its lineage.")
-            return False
-
-        # ✨ FIX: Call the correctly renamed function.
-        self._update_species_data(next_species_name, self.all_species_data)
-        return True
     
     def gain_evolution_points(self, points=1):
         """

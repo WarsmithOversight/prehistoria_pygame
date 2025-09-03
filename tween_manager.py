@@ -45,6 +45,7 @@ class TweenManager:
             'player_token': PlayerTokenUpdater,
             'value': ValueUpdater,
             'camera_offset': OffsetUpdater,
+            'rect_position': RectPositionUpdater,
         }
 
     def add_tween(self, target_dict, animation_type, drawable_type='value', on_complete=None, **kwargs):
@@ -347,6 +348,16 @@ class BobTween(Tween):
 # ──────────────────────────────────────────────────
 # 🎬 Tween Targets
 # ──────────────────────────────────────────────────
+
+class RectPositionUpdater:
+   """A specialized updater that sets the 'topleft' attribute of a pygame.Rect object."""
+   def __init__(self, persistent_state, variable_state): pass
+
+   def on_start(self, target_rect, value):
+       target_rect.topleft = value
+
+   def on_update(self, target_rect, value):
+       target_rect.topleft = value
 
 class OffsetUpdater:
     """A specialized updater for a 2-element list, like a camera offset."""

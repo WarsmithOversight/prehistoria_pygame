@@ -42,10 +42,11 @@ class MainMenuPanel(BasePanel):
         }
 
         # Defines the order and IDs for the UI elements
+        # Each item is now in its own row (a list within the main list)
         self.layout_blueprint = [
-            {"id": "new_world"},
-            {"id": "load_world"},
-            {"id": "dev_quickboot"}
+            [{"id": "new_world"}],
+            [{"id": "load_world"}],
+            [{"id": "dev_quickboot"}]
         ]
 
         # Calculates the dimensions of the panel and its elements
@@ -77,23 +78,30 @@ class MainMenuPanel(BasePanel):
         content_w, content_h = self.dims["panel_background_size"]
         pad_x, pad_y = UI_ELEMENT_PADDING
  
-        start_x = (self.surface.get_width() - content_w) / 2
         current_y = (self.surface.get_height() - content_h) / 2 + pad_y
+        start_x_offset = (self.surface.get_width() - content_w) / 2
+
+        for i, row_items in enumerate(self.layout_blueprint):
+            if not isinstance(row_items, list): row_items = [row_items]
  
-        for item in self.layout_blueprint:
-            item_id = item.get("id")
-            element_def = self.element_definitions.get(item_id)
-            if not element_def: continue
+            row_width = self.dims['row_widths'][i]
+            current_x = start_x_offset + (content_w - row_width) / 2
  
-            elem_dims_data = self.dims['element_dims'][item_id]
-            elem_w, elem_h = elem_dims_data["final_size"]
-            elem_x = start_x + (content_w - elem_w) / 2 # Center horizontally
-            element_rect = pygame.Rect(elem_x, current_y, elem_w, elem_h)
+            for item in row_items:
+                item_id = item.get("id")
+                element_def = self.element_definitions.get(item_id)
+                if not element_def: continue
  
-            # Pass the main self.dims dictionary, which holds the uniform geometry
-            button = Button(rect=element_rect, text=element_def["text_options"][0], assets_state=self.assets_state, style=element_def["style"], dims=self.dims, callback=element_def["action"])
-            elements.append(button)
-            current_y += elem_h + pad_y
+                elem_dims_data = self.dims['element_dims'][item_id]
+                elem_w, elem_h = elem_dims_data["final_size"]
+                element_rect = pygame.Rect(current_x, current_y, elem_w, elem_h)
+ 
+                button = Button(rect=element_rect, text=element_def["text_options"][0], assets_state=self.assets_state, style=element_def["style"], dims=self.dims, callback=element_def["action"])
+                elements.append(button)
+                current_x += elem_w + pad_x
+            
+            row_height = self.dims['row_heights'][i]
+            current_y += row_height + pad_y
         return elements
 
     def on_new_world(self):

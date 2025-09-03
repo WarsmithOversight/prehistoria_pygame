@@ -21,13 +21,12 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
     This is the single source of truth for UI layout geometry.
     """
     dims = {}
-    dims['element_dims'] = {} # To store the final size of each individual element
+    dims['row_widths'] = []    # To store the calculated width of each row
+    dims['row_heights'] = []   # To store the calculated height of each row
 
     # ──────────────────────────────────────────────────
     # 📏 1. Calculate the size of each individual element
     # ──────────────────────────────────────────────────
-    max_element_width = 0
-    total_content_height = 0
 
     # ✨ NEW: First, find the max text size for ALL buttons in this panel
     max_button_text_w, max_button_text_h = 0, 0
@@ -62,53 +61,97 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
             (hex_bg_w, hex_bg_h / 2), (NEW_CORNER_OFFSET + padded_w, hex_bg_h),
             (NEW_CORNER_OFFSET, hex_bg_h), (0, hex_bg_h / 2)]
 
-    for i, item in enumerate(layout_blueprint):
-        item_id = item.get("id")
-        if not item_id: continue
-        
-        element_def = element_definitions.get(item_id)
-        if not element_def: continue
-
-        # --- Calculate Button Dimensions ---
+    # ✨ REFACTORED: Now, loop through the definitions to store each element's final size.
+    dims['element_dims'] = {}
+    for item_id, element_def in element_definitions.items():
         if element_def.get("type") == "button":
-
-            # All buttons now use the same, pre-calculated uniform size
+            # All buttons use the same, pre-calculated uniform size.
             final_w, final_h = dims["uniform_button_final_size"]
             dims['element_dims'][item_id] = {"final_size": (final_w, final_h)}
-
-            if final_w > max_element_width: max_element_width = final_w
-            total_content_height += final_h
-
-        # --- Calculate Text Block Dimensions ---
+ 
         elif element_def.get("type") == "text_block":
             max_width = element_def["properties"]["max_width"]
-
-            # ✨ FIX: Use the new centralized get_font function.
             font = get_font(element_def["style"]['font_size_key'])
-
-            final_height = _calculate_wrapped_text_height(element_def["content"], font, max_width)            
+            final_height = _calculate_wrapped_text_height(element_def["content"], font, max_width)
             dims['element_dims'][item_id] = {"final_size": (max_width, final_height)}
-            if max_width > max_element_width: max_element_width = max_width
-            total_content_height += final_height
+ 
+        elif element_def.get("type") == "static_image":
+            size = element_def["properties"]["size"]
+            dims['element_dims'][item_id] = {"final_size": size}
 
-    # ──────────────────────────────────────────────────
-    # 🖼️ 2. Calculate Overall Panel Size
-    # ──────────────────────────────────────────────────
-    bark_pieces = assets_state["ui_assets"].get("bark_border_pieces", {})
-    dims["bark_border_tile_dim"] = bark_pieces['1'].get_width() if bark_pieces else 12
-    
+# ──────────────────────────────────────────────────
+    # 🖼️ 2. Process Layout Blueprint to Calculate Row and Panel Sizes
+    # ──────────────────────────────────────────────────    
     pad_x, pad_y = UI_ELEMENT_PADDING
+
+    # ┌──────────────────────────────────────────────┐
+    # │   Step 2A: Measure the Raw Content Area      │
+    # └──────────────────────────────────────────────┘
+    # First, we loop through the blueprint to measure the total dimensions
+    # of the UI elements themselves, without any outer panel padding.
+    max_content_width = 0
+    total_content_height = 0
+
+    for row_items in layout_blueprint:
+        # For backward compatibility, treat a single dict as a row with one item.
+        if not isinstance(row_items, list):
+            row_items = [row_items]
+ 
+        current_row_width = 0
+        max_row_height = 0
+ 
+        # Calculate the total width of all elements in this row.
+        # Find the height of the tallest element, which defines the row's height.
+        for item in row_items:
+            item_id = item.get("id")
+            if not item_id: continue
+            
+            elem_w, elem_h = dims['element_dims'][item_id]["final_size"]
+            current_row_width += elem_w
+            if elem_h > max_row_height:
+                max_row_height = elem_h
+ 
+        # Add the horizontal padding *between* the elements in the row.
+        if len(row_items) > 1:
+            current_row_width += pad_x * (len(row_items) - 1)
+ 
+        # Store this row's final dimensions for the placement method to use later.
+        dims['row_widths'].append(current_row_width)
+        dims['row_heights'].append(max_row_height)
+ 
+        # Check if this is the widest row we've seen so far.
+        if current_row_width > max_content_width:
+            max_content_width = current_row_width
+        
+        # Add the tallest element's height to the total content height.
+        total_content_height += max_row_height
+
+    # Add the vertical padding *between* the rows.
+    if len(layout_blueprint) > 1:
+        total_content_height += pad_y * (len(layout_blueprint) - 1)
+
+    # ┌──────────────────────────────────────────────┐
+    # │   Step 2B: Calculate Padded Background Size  │
+    # └──────────────────────────────────────────────┘
+    # Now, add the outer padding around the raw content to get the size
+    # of the dark, textured background area.
+    panel_background_w = int(max_content_width + (pad_x * 2))
+    panel_background_h = int(total_content_height + (pad_y * 2))
+    dims["panel_background_size"] = (panel_background_w, panel_background_h)
+
+    # ┌──────────────────────────────────────────────┐
+    # │   Step 2C: Calculate Final Panel with Border │
+    # └──────────────────────────────────────────────┘
+    # Finally, add the width of the decorative bark border to get the
+    # absolute final dimensions for the entire panel surface.
+    bark_pieces = assets_state["ui_assets"].get("bark_border_pieces", {})
+    border_dim = bark_pieces['1'].get_width() if bark_pieces else 12
+    dims["bark_border_tile_dim"] = border_dim
     
-    # The final content size is based on the elements we just measured
-    panel_content_w = int(max_element_width + (pad_x * 2))
-    panel_content_h = int(total_content_height + ((len(layout_blueprint) + 1) * pad_y))
-    dims["panel_background_size"] = (panel_content_w, panel_content_h)
-
-    # The total panel size includes the decorative border
-    final_panel_w = panel_content_w + dims["bark_border_tile_dim"]
-    final_panel_h = panel_content_h + dims["bark_border_tile_dim"]
+    final_panel_w = panel_background_w + border_dim
+    final_panel_h = panel_background_h + border_dim
     dims["final_panel_size"] = (final_panel_w, final_panel_h)
-
+    
     # 🔊 Print a dynamic success message with useful dev info.
     if DEBUG:
         print(f"[ui_dimensions] ✅ Dimensions for '{panel_id}' panel ({len(layout_blueprint)} elements) calculated. Final size: {final_panel_w}x{final_panel_h}.")

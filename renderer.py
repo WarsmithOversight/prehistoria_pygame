@@ -59,51 +59,31 @@ def get_z_value(drawable):
     # Returns a default z-value of 0 for all other cases
     return 0
 
-def render_giant_z_pot(screen, tile_objects, notebook, persistent_state, assets_state, variable_state):
-
-    # Filters the notebook to create a list of all valid drawables (objects with a 'type' key)
-    drawables_from_notebook = [v for v in notebook.values() if isinstance(v, dict) and 'type' in v]
-    
-    # Combines the tile objects and notebook drawables into a single list
-    draw_pot = list(tile_objects.values()) + drawables_from_notebook
-    
-    # Initializes a list to hold objects that will be drawn
+def render_giant_z_pot(screen, notebook, persistent_state, assets_state, variable_state):
+    """
+    Renders all drawable items from the notebook, intelligently unpacking
+    both top-level items and nested dictionaries like tile_objects.
+    """
     to_draw = []
+    
+    # 🧠 Intelligently unpack the notebook into a single list of drawables.
+    for key, value in notebook.items():
+        # Case 1: The value is the dictionary of all tile objects.
+        if key == 'tile_objects':
+            to_draw.extend(value.values()) # Add all individual Tile objects
+        # Case 2: The value is a standard drawable dictionary (like a UI panel or overlay).
+        elif isinstance(value, dict) and 'type' in value:
+            to_draw.append(value)
 
-    # Initializes a counter for skipped drawables
-    skipped = 0
-
-    # Iterates through all potential drawables
-    for entry in draw_pot:
-
-        # Checks if the entry has a 'z' attribute or key
-        has_z = hasattr(entry, 'z') or (isinstance(entry, dict) and 'z' in entry)
-        
-        # If the entry has a z-value, it is added to the list of objects to be drawn
-        if has_z:
-            to_draw.append(entry)
-        else:
-
-        # Otherwise, the skipped counter is incremented
-            skipped += 1
-
-    # Prints a debug message if any drawables were skipped
-    if DEBUG and skipped:
-        print(f"[renderer] ⚠️ {skipped} drawables skipped (missing 'z' value)")
-
-    # Sorts the list of drawables based on their z-value
+    # Sort the comprehensive list of drawables by their z-value.
     to_draw.sort(key=get_z_value)
 
-    # Iterates through the sorted list and renders each drawable
+    # 🎨 Iterate through the sorted list and render each drawable.
     for drawable in to_draw:
-
-        # Retrieves the type of the drawable from its attribute or dictionary key
+        # Retrieves the type of the drawable.
         typ = getattr(drawable, 'type', None) or drawable.get('type')
-
-        # Gets the corresponding interpreter function from the TYPEMAP
         interpreter = TYPEMAP.get(typ)
 
-        # If a valid interpreter is found, it is called to render the drawable
         if interpreter:
             interpreter(screen, drawable, persistent_state, assets_state, variable_state)
         elif DEBUG:

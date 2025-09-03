@@ -67,8 +67,6 @@ class Button:
         surface.blit(self.base_surface, self.rect.topleft)
         surface.blit(self.text_surface, (self.rect.left + self.text_rect.left, self.rect.top + self.text_rect.top))
 
-# In ui_components.py
-
 class UITextBlock:
     """A UI component for displaying potentially multi-line, wrapped text."""
     def __init__(self, rect, text, style, assets_state):
@@ -177,7 +175,92 @@ class UITextBlock:
                 surface.blit(line_surface, (x, current_y))
             
             current_y += self.line_height
-            
+
+class UIStaticImage:
+    """A simple component that just draws a pre-rendered surface."""
+    def __init__(self, rect, surface):
+        self.rect = rect
+        self.surface = surface
+
+    def draw(self, target_surface):
+        """Draws the static image onto the target surface."""
+        if self.surface:
+            target_surface.blit(self.surface, self.rect.topleft)
+
+class UICard:
+    """
+    A composite UI component that displays formatted text and handles interactive
+    states like a button (glowing, clicking).
+    """
+    def __init__(self, rect, card_data, assets_state, event_bus):
+        # ⚙️ Core Attributes
+        self.rect = rect
+        self.card_data = card_data
+        self.assets_state = assets_state
+        self.event_bus = event_bus
+
+        # 🚩 State Management
+        self.is_glowing = False
+        self._is_pressed = False
+
+        # 👶 Child Components: Contains a UITextBlock to render the text.
+        text_rect = pygame.Rect(0, 0, rect.width, rect.height)
+        text_style = {"font_size_key": "regular_medium", "text_color": (255, 220, 200), "align": "center"}
+        card_text = (
+            f"{self.card_data['name']}\n"
+            f"{self.card_data['type']}\n"
+            f"{self.card_data['difficulty']}"
+        )
+        self.text_block = UITextBlock(rect=text_rect, text=card_text, style=text_style, assets_state=self.assets_state)
+
+    def set_glow(self, is_glowing):
+        """Externally sets the glowing state of the card."""
+        self.is_glowing = is_glowing
+
+    def handle_events(self, events, mouse_pos):
+        """Handles mouse input to detect clicks, just like a button."""
+        is_hovering = self.rect.collidepoint(mouse_pos)
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and is_hovering:
+                self._is_pressed = True
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if self._is_pressed and is_hovering:
+                    # When clicked, post an event with this card's data.
+                    self.event_bus.post("UI_CARD_CLICKED", self.card_data)
+                    if DEBUG: print(f"[UICard] ✅ Clicked card: {self.card_data['id']}")
+                self._is_pressed = False
+
+    def draw(self, surface):
+        """Draws the card's text and, if glowing, a surrounding glow effect."""
+        # 1. ✍️ Always create the text content on its own surface first.
+        # This surface is the exact size of the card's logical rectangle.
+        text_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+        self.text_block.draw(text_surface)
+
+        if self.is_glowing:
+            # 🎨 Config: How many pixels the glow should spill outside the card's edge.
+            GLOW_PADDING = 12
+
+            # 2. ✨ Create a new surface that is LARGER than the card to hold the glow.
+            padded_size = (self.rect.width + GLOW_PADDING * 2, self.rect.height + GLOW_PADDING * 2)
+            final_surface = pygame.Surface(padded_size, pygame.SRCALPHA)
+
+            # 3. 🔦 Draw the glow onto the larger surface first.
+            glow_asset = self.assets_state.get("tinted_glows", {}).get("yellow", {}).get(1.0)
+            if glow_asset:
+                scaled_glow = pygame.transform.smoothscale(glow_asset, padded_size)
+                final_surface.blit(scaled_glow, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+            # 4. 📝 Blit the text content into the CENTER of the larger, glowing surface.
+            final_surface.blit(text_surface, (GLOW_PADDING, GLOW_PADDING))
+
+            # 5. 📍 Calculate the final blit position, offsetting by the padding.
+            blit_pos = (self.rect.left - GLOW_PADDING, self.rect.top - GLOW_PADDING)
+            surface.blit(final_surface, blit_pos)
+ 
+        else: # If not glowing, just draw the text normally.
+            surface.blit(text_surface, self.rect.topleft)
+
 class BasePanel:
     """A base class for all UI panels."""
     def __init__(self, persistent_state, assets_state):
@@ -198,6 +281,12 @@ class BasePanel:
                 "rect": self.rect,
                 "z": z_formula(0) # UI z-value doesn't depend on row
             }
+
+    def destroy(self, notebook):
+        """Removes the panel's drawable from the notebook, effectively hiding it."""
+        if self.drawable_key and self.drawable_key in notebook:
+            del notebook[self.drawable_key]
+            if DEBUG: print(f"[BasePanel] ✅ Destroyed drawable: '{self.drawable_key}'")
 
 '''
 ui_components.py - A Toolbox for Procedural UI Elements
