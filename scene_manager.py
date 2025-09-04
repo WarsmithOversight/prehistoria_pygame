@@ -148,7 +148,7 @@ class MainMenuScene:
         '''Called at the end of SceneManager init.'''
 
         # Loads all UI assets from disk
-        load_all_ui_assets(self.assets_state)
+        load_all_ui_assets(self.assets_state, self.persistent_state)
 
         # Creates an instance of the MainMenuPanel
         self.main_menu_panel = MainMenuPanel(self.persistent_state, self.assets_state, self)

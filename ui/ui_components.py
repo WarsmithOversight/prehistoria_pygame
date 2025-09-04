@@ -7,6 +7,64 @@ from load_assets import get_font
 
 DEBUG = True
 
+def create_procedural_rectangular_glow(size, color):
+    """
+    Creates a high-quality, soft "spill" of light by simulating a blur effect.
+    This mimics the glow style of cards from games like Hearthstone.
+    """
+    # 🎨 Config: Control the glow's appearance here
+    width, height = size
+    GLOW_PADDING = 25  # How far the glow should spill from the edges
+    BLUR_PASSES = 6      # How soft/blurry the glow is. More passes = softer.
+    MAX_ALPHA = 200      # The brightness of the glow's core.
+
+    # 🖼️ Create the final surface, larger than the card to contain the spill
+    padded_size = (width + GLOW_PADDING * 2, height + GLOW_PADDING * 2)
+    glow_surface = pygame.Surface(padded_size, pygame.SRCALPHA)
+
+    # 1. ✍️ Draw the initial solid shape of the card in the center of our surface.
+    # This will be the "light source" that we blur.
+    card_shape_rect = pygame.Rect(GLOW_PADDING, GLOW_PADDING, width, height)
+    pygame.draw.rect(glow_surface, (*color, MAX_ALPHA), card_shape_rect, 0, border_radius=12)
+
+    # 2. ✨ Simulate the blur effect.
+    # We repeatedly scale the image down and then back up. The smoothscale
+    # algorithm's interpolation naturally blurs the edges with each pass.
+    for i in range(BLUR_PASSES):
+        # Scale down to half size, creating a blur
+        scaled_down = pygame.transform.smoothscale(glow_surface, (padded_size[0] // 2, padded_size[1] // 2))
+        # Scale back up to original size, enhancing the blur
+        glow_surface = pygame.transform.smoothscale(scaled_down, padded_size)
+
+    # 3. (Optional) Add a slightly brighter "core" to make the edge pop.
+    # This helps define the card shape within the soft glow.
+    pygame.draw.rect(glow_surface, (*color, 50), card_shape_rect, 2, border_radius=10)
+
+    # --- 4. Create a "Stamp" to Punch a Hole in the Center ---
+    mask = pygame.Surface(padded_size, pygame.SRCALPHA)
+    mask.fill((255, 255, 255, 255)) # Start with a fully opaque (white) mask
+
+    base_rect = pygame.Rect(GLOW_PADDING, GLOW_PADDING, width, height)
+
+    # 🎨 Control the size of the transparent stamp here.
+    # A negative number makes the hole LARGER than the card, creating a margin.
+    STAMP_INSET = -4
+
+    # Create the feathered hole by drawing a solid black rect in the middle,
+    # slightly smaller than the card's shape to create a soft inner edge.
+    FEATHER = 4
+    hole_rect = base_rect.inflate(STAMP_INSET * 2, STAMP_INSET * 2)
+    pygame.draw.rect(mask, (0, 0, 0, 255), hole_rect, 0, border_radius=8)
+
+    # Blur the mask to create the soft, feathered edge for our stamp.
+    for i in range(FEATHER):
+        mask = pygame.transform.smoothscale(pygame.transform.smoothscale(mask, (padded_size[0]//2, padded_size[1]//2)), padded_size)
+
+    # Apply the mask to the glow surface using multiplicative blending.
+    glow_surface.blit(mask, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    return glow_surface
+
 class Button:
     """A generic, stateful UI button that caches its base and composites on the fly."""
     def __init__(self, rect, text, assets_state, style, dims, callback):
@@ -213,6 +271,12 @@ class UICard:
         )
         self.text_block = UITextBlock(rect=text_rect, text=card_text, style=text_style, assets_state=self.assets_state)
 
+        # ✨ NEW: Create and cache a custom, procedural glow surface for this card.
+        self.cached_glow_surface = create_procedural_rectangular_glow(
+            size=self.rect.size,
+            color=(0, 180, 255) # A nice magic blue
+        )
+
     def set_glow(self, is_glowing):
         """Externally sets the glowing state of the card."""
         self.is_glowing = is_glowing
@@ -236,30 +300,25 @@ class UICard:
         # This surface is the exact size of the card's logical rectangle.
         text_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
         self.text_block.draw(text_surface)
-
-        if self.is_glowing:
-            # 🎨 Config: How many pixels the glow should spill outside the card's edge.
-            GLOW_PADDING = 12
-
-            # 2. ✨ Create a new surface that is LARGER than the card to hold the glow.
-            padded_size = (self.rect.width + GLOW_PADDING * 2, self.rect.height + GLOW_PADDING * 2)
-            final_surface = pygame.Surface(padded_size, pygame.SRCALPHA)
-
-            # 3. 🔦 Draw the glow onto the larger surface first.
-            glow_asset = self.assets_state.get("tinted_glows", {}).get("yellow", {}).get(1.0)
-            if glow_asset:
-                scaled_glow = pygame.transform.smoothscale(glow_asset, padded_size)
-                final_surface.blit(scaled_glow, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-
-            # 4. 📝 Blit the text content into the CENTER of the larger, glowing surface.
-            final_surface.blit(text_surface, (GLOW_PADDING, GLOW_PADDING))
-
-            # 5. 📍 Calculate the final blit position, offsetting by the padding.
-            blit_pos = (self.rect.left - GLOW_PADDING, self.rect.top - GLOW_PADDING)
-            surface.blit(final_surface, blit_pos)
  
-        else: # If not glowing, just draw the text normally.
-            surface.blit(text_surface, self.rect.topleft)
+        # ✨ If the card is glowing, draw the pre-rendered procedural glow first.
+        if self.is_glowing and self.cached_glow_surface:
+            # The glow surface is larger than the card, so we need to offset it.
+            glow_w, glow_h = self.cached_glow_surface.get_size()
+            offset_x = (self.rect.width - glow_w) / 2
+            offset_y = (self.rect.height - glow_h) / 2
+            blit_pos = (self.rect.left + offset_x, self.rect.top + offset_y)
+            
+            # 🎨 Draw the glow. The ADD blend mode creates a nice lighting effect.
+            surface.blit(self.cached_glow_surface, blit_pos, special_flags=pygame.BLEND_RGBA_ADD)
+
+        # ✍️ Always draw the text on top of everything else.
+        surface.blit(text_surface, self.rect.topleft)
+
+# 
+# ✨ FIX: The following classes and functions were nested inside UICard.
+# They have been un-indented to be at the top level of the module.
+#
 
 class BasePanel:
     """A base class for all UI panels."""
@@ -286,7 +345,7 @@ class BasePanel:
         """Removes the panel's drawable from the notebook, effectively hiding it."""
         if self.drawable_key and self.drawable_key in notebook:
             del notebook[self.drawable_key]
-            if DEBUG: print(f"[BasePanel] ✅ Destroyed drawable: '{self.drawable_key}'")
+        if DEBUG: print(f"[BasePanel] ✅ Destroyed drawable: '{self.drawable_key}'")
 
 '''
 ui_components.py - A Toolbox for Procedural UI Elements

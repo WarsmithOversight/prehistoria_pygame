@@ -131,6 +131,10 @@ def _generate_single_river(source_tile, tiledata, persistent_state):
             neighbor_tile = tiledata.get(n_coord)
             if not neighbor_tile: continue
 
+
+            # Exclude mountains as a valid path tile.
+            if neighbor_tile.get("is_mountain"): continue
+
             # Always flow into lowlands and ocean, if adjacent
             if neighbor_tile.get("is_ocean") or neighbor_tile.get("lowlands"):
                 eligible_neighbors.append({'coord': n_coord, 'elevation': -1.0})

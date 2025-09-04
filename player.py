@@ -188,8 +188,8 @@ class Player:
                     # Must match preferred terrain
                     if tile.terrain not in preferred_terrain:
                         continue
-                    # If required, must have all optional tags
-                    if check_tags and not all(getattr(tile, tag, False) for tag in optional_tags):
+                    # If required, must an optional tags
+                    if check_tags and not any(getattr(tile, tag, False) for tag in optional_tags):
                         continue
                     
                     matches.append(coord)
@@ -197,24 +197,30 @@ class Player:
 
             # Tier 1: Check primary biome with preferred terrain AND optional tags
             best_tiles = find_matches(primary_biome, check_tags=True)
+            print(f"[Player] 🔬 Found {len(best_tiles)} perfect tiles in '{primary_biome}' biome with optional tags.")
             if best_tiles:
+                print(f"[Player] ✅ Found a starting tile for {self.species_name} in {primary_biome} with optional tags.")
                 return random.choice(best_tiles)
 
             # Tier 2: Check secondary biome with preferred terrain AND optional tags
             if secondary_biome:
                 better_tiles = find_matches(secondary_biome, check_tags=True)
+                print(f"[Player] 🔬 Found {len(better_tiles)} perfect tiles in secondary biome '{secondary_biome}' with optional tags.")
                 if better_tiles:
+                    print(f"[Player] ✅ Found a starting tile for {self.species_name} in a secondary biome ({secondary_biome}) with optional tags.")
                     return random.choice(better_tiles)
             
             # Tier 3: Widen search to primary biome with just preferred terrain
             good_tiles = find_matches(primary_biome, check_tags=False)
             if good_tiles:
+                print(f"[Player] ✅ Found a starting tile for {self.species_name} in {primary_biome} without using optional tags.")
                 return random.choice(good_tiles)
 
             # Tier 4: Final fallback to secondary biome with just preferred terrain
             if secondary_biome:
                 okay_tiles = find_matches(secondary_biome, check_tags=False)
                 if okay_tiles:
+                    print(f"[Player] ✅ Found a starting tile for {self.species_name} in a secondary biome ({secondary_biome}) without optional tags.")
                     return random.choice(okay_tiles)
 
             # If all checks fail, we fail loudly as requested.

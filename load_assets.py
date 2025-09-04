@@ -240,13 +240,13 @@ def load_tileset_assets(assets_state, persistent_state):
         # Check for the special river-aware tile format
         if "-river" in base_name:
             parts = base_name.split("-river")
-            main_part = parts[0] # e.g., Mountain00
-            river_part = parts[1].split("-")[0] # e.g., 000010
-            
+            main_part = parts[0] # e.g., Mountain
+            variant_part = parts[1].split("-")[1] # e.g., 00
+            river_bitmask = parts[1].split("-")[0] # e.g., 000010
+
             # Extract the terrain name and variant from the main part
             terrain_name = ''.join([i for i in main_part if not i.isdigit()])
-            variant_str = ''.join([i for i in main_part if i.isdigit()])
-            river_bitmask = river_part
+            variant_str = variant_part # Use the variant from the end
         else:
             # Original logic for simple tiles without a river
             terrain_name = ''.join([i for i in base_name if not i.isdigit()])
@@ -780,11 +780,11 @@ def create_tinted_glow_masks(persistent_state, assets_state):
         "good": (40, 180, 70),
         "medium": (255, 215, 0),
         "bad": (220, 20, 60),
-        "hazard": (150, 0, 210), # Deep Violet
     }
     
     # Style 1: Primary border for standard movement (Outer Band)
-    PRIMARY_BORDER_STOPS = {
+    PRIMARY_BORDER_STOPS = {        "hazard": (150, 0, 210), # Deep Violet
+
         "outer_edge": 1.1,
         "solid_band_start": 0.93,
         "solid_band_end": 0.87,
@@ -1040,8 +1040,27 @@ def get_font(key="regular_medium"):
     if not font and DEBUG: print(f"[assets] ⚠️ Font key '{key}' not found. Falling back to default.")
     return font or _FONT_CACHE.get(_DEFAULT_FONT_KEY)
 
+def create_screen_edge_glow(screen_size, color, thickness, steps=20):
+    """Creates a surface with a soft glow around the screen edges."""
+    width, height = screen_size
+    glow_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    base_alpha = color[3] if len(color) > 3 else 255
+
+    # Draw a series of concentric, fading rectangles to create the glow
+    for i in range(steps):
+        t = i / steps
+        alpha = base_alpha * (1 - t)**2 # Use a curve for a nicer falloff
+        rect_color = (color[0], color[1], color[2], int(alpha))
+        
+        # The rectangle gets thicker as it fades
+        rect_thickness = int(thickness * t) + 1
+        pygame.draw.rect(glow_surface, rect_color, (0, 0, width, height), rect_thickness)
+ 
+    return glow_surface
+
+
 # Now, update the main orchestrator to call this new function
-def load_all_ui_assets(assets_state):
+def load_all_ui_assets(assets_state, persistent_state):
     """Orchestrator to run the entire UI asset creation pipeline."""
     assets_state["ui_assets"] = {}
     ui_path = "sprites/ui"
@@ -1049,6 +1068,15 @@ def load_all_ui_assets(assets_state):
     load_ui_textures(assets_state, ui_path)
     create_grayscale_ui_watermarks(assets_state)
     create_ui_border_assets(assets_state)
+
+    # ✨ Create the new procedural screen glow asset.
+    screen = persistent_state["pers_screen"]
+    screen_w, screen_h = screen.get_size()
+    # Now that we have the size, store it for any other systems that might need it.
+    assets_state["screen_size"] = (screen_w, screen_h)
+
+    red_glow_color = (255, 50, 50, 150) # Red with some transparency
+    assets_state["ui_assets"]["screen_edge_glow_red"] = create_screen_edge_glow((screen_w, screen_h), red_glow_color, 60)
 
 # ──────────────────────────────────────────────────
 # 💎 Collectible Assets

@@ -10,7 +10,7 @@
       "starting_location": {
         "search_biomes": ["floodplains", "tropical"],
         "preferred_terrain": ["Marsh"],
-        "optional_tags": []
+        "optional_tags": ["river_data", "is_lake"]
       },
       "interactions": {
         "good": ["Marsh", "Woodlands", "Lake", "Plains"],

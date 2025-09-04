@@ -20,6 +20,8 @@ class UIManager:
         self.notebook = notebook
         self.tween_manager = tween_manager
         self.hazard_deck = hazard_deck
+        self.players = [initial_player]
+        self.is_low_pop_glow_active = False
 
         # --- Panel Management ---
         # For persistent panels that are always on screen
@@ -29,6 +31,8 @@ class UIManager:
 
         # 👂 Subscribe to game-wide events
         self.event_bus.subscribe("ACTIVE_PLAYER_CHANGED", self.on_active_player_changed)
+        self.event_bus.subscribe("HAZARD_EVENT_START", self.on_hazard_event_start)
+        self.event_bus.subscribe("PLAYER_POPULATION_CHANGED", self.on_population_changed)
 
         # --- Initial Panel Creation ---
         # Create static panels like the palette here
@@ -38,8 +42,43 @@ class UIManager:
         # Create the initial portrait for the starting player
         self.create_portrait_panel(initial_player)
 
+        # ✨ Create the screen glow drawable in the notebook.
+        z_formula = self.persistent_state["pers_z_formulas"]["ui_panel"]
+        self.notebook['SCREEN_GLOW'] = {
+            'type': 'screen_glow_overlay', 'color': 'red', 'alpha': 0, 'z': z_formula(0) + 0.1
+        }
+
         if DEBUG:
             print("[UIManager] ✅ UIManager instantiated and subscribed to events.")
+
+    def on_hazard_event_start(self, data=None):
+        """Flashes the screen glow when a hazard event triggers."""
+        glow_drawable = self.notebook.get('SCREEN_GLOW')
+        if not glow_drawable: return
+ 
+        # A "chained" tween: fade in, then on completion, fade out.
+        def fade_out():
+            # Only fade out if the persistent low-pop glow isn't active
+            if not self.is_low_pop_glow_active:
+                self.tween_manager.add_tween(glow_drawable, 'fade', start_val=255, end_val=0, duration=0.8, drawable_type='value')
+ 
+        self.tween_manager.add_tween(glow_drawable, 'fade', start_val=0, end_val=255, duration=0.2, drawable_type='value', on_complete=fade_out)
+ 
+    def on_population_changed(self, data):
+        """Checks if any player has a low population to activate the persistent glow."""
+        glow_drawable = self.notebook.get('SCREEN_GLOW')
+        if not glow_drawable: return
+ 
+        # This event doesn't tell us which player changed, so we must check all.
+        # A more advanced system might pass the specific player in the event data.
+        is_any_player_low = any(p.current_population == 1 for p in self.players)
+ 
+        if is_any_player_low:
+            self.is_low_pop_glow_active = True
+            glow_drawable['alpha'] = 255 # Turn glow on fully
+        else:
+            self.is_low_pop_glow_active = False
+            glow_drawable['alpha'] = 0 # Turn it off
 
     def on_active_player_changed(self, new_player):
         """Event handler that fires when the turn changes, rebuilding player-specific UI."""
@@ -71,7 +110,8 @@ class UIManager:
             player=player,
             persistent_state=self.persistent_state,
             assets_state=self.assets_state,
-            event_bus=self.event_bus
+            event_bus=self.event_bus,
+            tween_manager=self.tween_manager
         )
 
     def handle_events(self, events, mouse_pos):

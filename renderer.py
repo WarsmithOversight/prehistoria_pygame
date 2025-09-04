@@ -102,6 +102,19 @@ def splash_screen_interpreter(screen, drawable, persistent_state, assets_state, 
     # Blits the surface onto the screen if it exists
     if surface:
         screen.blit(surface, (0, 0))
+def screen_glow_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """Draws a pre-rendered screen-sized glow effect with variable alpha."""
+    alpha = int(drawable.get("alpha", 0))
+    if alpha > 0:
+        color_key = drawable.get("color", "red")
+        asset_key = f"screen_edge_glow_{color_key}"
+        glow_asset = assets_state["ui_assets"].get(asset_key)
+        if glow_asset:
+            # Use a copy to avoid modifying the original asset's alpha
+            glow_copy = glow_asset.copy()
+            glow_copy.set_alpha(alpha)
+            screen.blit(glow_copy, (0, 0))
+
 
 def fade_overlay_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Draws a screen-sized black rectangle with a variable alpha value."""
@@ -748,5 +761,6 @@ TYPEMAP = {
     "ui_panel": ui_panel_interpreter,
     "splash_screen": splash_screen_interpreter,
     "fade_overlay": fade_overlay_interpreter,
+    "screen_glow_overlay": screen_glow_interpreter,
     "indicator": render_indicator,
    }

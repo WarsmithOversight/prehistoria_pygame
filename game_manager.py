@@ -631,6 +631,6 @@ class GameManager:
         # 🔊 Play a random sound for collecting.
         self.audio_manager.play_sfx(blacklist=["earn_points.wav", "secret_area_unlock_1"])
 
-        # 📢 Publish a game-wide event to notify any interested systems (like the UI).
+        # 📢 Publish a game-wide event to notify any interested systemas (like the UI).
         self.event_bus.post("HAZARD_EVENT_START")
         print(f"[GameManager] ⚡ HAZARD_EVENT_START triggered by '{source_element_id}'.")
