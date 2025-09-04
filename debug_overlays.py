@@ -3,7 +3,7 @@
 
 from shared_helpers import hex_geometry
 import random
-from world_generation.generate_terrain import REGIONAL_TAG_PRIORITY
+from scenes.loading_screen.generate_terrain import REGIONAL_TAG_PRIORITY
 
 # ──────────────────────────────────────────────────
 # ⚙️ Debug Toggles

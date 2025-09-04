@@ -2,7 +2,7 @@
 # Includes various helper modules shared by various scripts
 
 import math
-import heapq
+import pygame
 
 DEBUG = True
 
@@ -438,3 +438,45 @@ def get_tiles_in_range(start_coord, distance, tile_objects, persistent_state):
         frontier = next_frontier
         
     return visited
+
+def desaturate_surface(surf, factor):
+    """
+    Returns a desaturated version of a surface.
+    A factor of 0.0 means no change, 1.0 means full grayscale.
+    """
+
+    # 1. Check for valid desaturation factor and return early if no change is needed.
+    if factor <= 0.0: return surf
+    if factor > 1.0: factor = 1.0
+
+    # 2. Create a grayscale version of the sprite.
+    #    This uses the standard formula for luminance to preserve brightness.
+    grayscale_surf = surf.copy()
+    pixels = pygame.PixelArray(grayscale_surf)
+
+    # Loop through all pixels to calculate and apply the new grayscale value
+    for x in range(grayscale_surf.get_width()):
+        for y in range(grayscale_surf.get_height()):
+            r, g, b, a = grayscale_surf.get_at((x, y))
+
+            # Calculate luminance for a proper grayscale conversion
+            luminance = int(0.299 * r + 0.587 * g + 0.114 * b)
+            pixels[x, y] = (luminance, luminance, luminance, a)
+    pixels.close()
+
+    # 3. Blend the grayscale version over the original.
+    #    The alpha is determined by the desaturation factor.
+    result_surf = surf.copy()
+
+    # Set the alpha of the grayscale surface for blending
+    grayscale_surf.set_alpha(int(255 * factor))
+
+    # Blit the semitransparent grayscale surface onto the original
+    result_surf.blit(grayscale_surf, (0, 0))
+    
+    return result_surf
+
+# [ ] TODO: run every single PNG with transperancy through this when loading it
+def load_png(path, with_alpha=True):
+    surf = pygame.image.load(path)
+    return surf.convert_alpha() if with_alpha else surf.convert()

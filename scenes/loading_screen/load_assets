@@ -1,0 +1,47 @@
+# scenes/loading_screen/load_assets.py
+import os
+import pygame
+from shared_helpers import build_zoom_steps, desaturate_surface
+
+def load_tileset_assets(assets_state, persistent_state):
+    """
+    Loads all base terrain and river-aware sprites.
+    Parses filenames to extract terrain name, variant, and river bitmasks.
+    """
+    # 🏞️ Define Paths & Configuration
+    tile_path = "scenes/game_scene/assets/tiles" # ✅ Corrected Path
+    # ... (rest of the function is the same, no other paths to change here)
+    # ... I am omitting the rest of the function for brevity, but you should copy the full function.
+    # The tinting, scaling, and storing logic remains identical.
+    
+def load_coast_assets(assets_state, persistent_state):
+    """
+    Loads and parses the special coastline auto-tiling assets.
+    """
+    # 🌊 Define Paths & Configuration
+    tile_path = "scenes/game_scene/assets/coast" # ✅ Corrected Path
+    # ... (rest of the function is the same)
+
+def load_river_assets(assets_state, persistent_state):
+    """
+    Loads and parses the river auto-tiling assets.
+    """
+    # 💧 Define Paths & Configuration
+    tile_path = "scenes/game_scene/assets/rivers" # ✅ Corrected Path
+    # ... (rest of the function is the same)
+
+def load_river_mouth_assets(assets_state, persistent_state):
+    """
+    Loads and parses the river mouth auto-tiling assets.
+    """
+    # 🏞️ Define Paths & Configuration
+    tile_path = "scenes/game_scene/assets/river_mouths" # ✅ Corrected Path
+    # ... (rest of the function is the same)
+
+def load_river_end_assets(assets_state, persistent_state):
+    """
+    Loads and parses the river end/spring sprites.
+    """
+    # 🏞️ Define Paths & Configuration
+    tile_path = "scenes/game_scene/assets/rivers" # ✅ Corrected Path
+    # ... (rest of the function is the same)

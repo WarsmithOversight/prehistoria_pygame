@@ -3,7 +3,7 @@
 
 from shared_helpers import hex_to_pixel, hex_geometry
 import pygame, hashlib
-from load_assets import get_font
+from load_ui_assets import get_font
 import pygame, hashlib, math
 
 # ──────────────────────────────────────────────────
@@ -102,6 +102,7 @@ def splash_screen_interpreter(screen, drawable, persistent_state, assets_state, 
     # Blits the surface onto the screen if it exists
     if surface:
         screen.blit(surface, (0, 0))
+        
 def screen_glow_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Draws a pre-rendered screen-sized glow effect with variable alpha."""
     alpha = int(drawable.get("alpha", 0))
@@ -114,7 +115,6 @@ def screen_glow_interpreter(screen, drawable, persistent_state, assets_state, va
             glow_copy = glow_asset.copy()
             glow_copy.set_alpha(alpha)
             screen.blit(glow_copy, (0, 0))
-
 
 def fade_overlay_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Draws a screen-sized black rectangle with a variable alpha value."""
@@ -382,8 +382,6 @@ def tile_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     if hasattr(drawable, 'tilebox') and drawable.tilebox:
         tilebox_interpreter(screen, drawable, persistent_state, variable_state, assets_state)
 
-# Add this new function to renderer.py
-
 def tilebox_interpreter(screen, tile_drawable, persistent_state, variable_state, assets_state):
     """
     The specialist interpreter for drawing status icons in the "Tilebox" area.
@@ -483,26 +481,6 @@ def text_type_interpreter(screen, drawable, persistent_state, assets_state, vari
     surf = font.render(text, True, color)
     rect = surf.get_rect(center=(px, py))
     screen.blit(surf, rect.topleft)
-
-
-def edge_line_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
-    """
-    Draws a zoom-safe line between p1 and p2 from drawable.
-    """
-
-    # Get the start and end pixel coordinates
-    p1 = drawable["p1"]
-    p2 = drawable["p2"]
-
-    # Get the color and thickness properties
-    color = drawable.get("color", (0, 0, 0))
-    zoom = variable_state.get("var_current_zoom", 1.0)
-
-    # Adjust the line thickness based on zoom
-    thickness = max(1, int(drawable.get("thickness", 2) * zoom))
-
-    # Draw the line on the screen
-    pygame.draw.line(screen, color, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), thickness)
         
 def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
     """Helper to draw a quadratic Bézier curve."""
@@ -606,32 +584,6 @@ def path_curve_interpreter(screen, drawable, persistent_state, assets_state, var
 
         # Draws the Bezier curve using the start, control, and end points
         _draw_bezier_curve(screen, p_start, control_point, p_end, thickness, color)
-     
-
-def debug_triangle_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
-    """
-    Draws a polygon from a pre-defined list of world-space vertices and a color.
-    This "dumb" interpreter is responsible for applying camera transformations.
-    """
-    # 🎨 Get the pre-defined color and world-space vertices from the drawable
-    color = drawable.get("color", (255, 0, 0)) # Default to red if no color is specified
-    world_points = drawable.get("points", [])
-    
-    if not world_points:
-        return
-
-    # 🎥 Apply camera zoom and offset to each point
-    zoom = variable_state.get("var_current_zoom", 1.0)
-    offset_x, offset_y = variable_state.get("var_render_offset", (0, 0))
-    
-    screen_points = []
-    for wx, wy in world_points:
-        sx = (wx * zoom) + offset_x
-        sy = (wy * zoom) + offset_y
-        screen_points.append((sx, sy))
-        
-    # ✍️ Draw the final polygon on the screen
-    pygame.draw.polygon(screen, color, screen_points)
 
 def ui_panel_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Renders a pre-surfaced UI panel from the notebook."""
@@ -754,10 +706,8 @@ TYPEMAP = {
     "tile": tile_type_interpreter,
     "circle": circle_type_interpreter,
     "text": text_type_interpreter,
-    "edge_line": edge_line_type_interpreter,
     "artwork": artwork_interpreter,
     "path_curve": path_curve_interpreter,
-    "debug_triangle": debug_triangle_interpreter,
     "ui_panel": ui_panel_interpreter,
     "splash_screen": splash_screen_interpreter,
     "fade_overlay": fade_overlay_interpreter,

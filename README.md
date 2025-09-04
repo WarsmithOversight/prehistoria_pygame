@@ -46,5 +46,5 @@
 - [ ] Fix inconsistent button border
 - [ ] Fix unresponsive continue button
 - [ ] Add region borders
-- [ ] Clean up Tiledata before exporting
+- [x] Clean up Tiledata before exporting
 - [ ] Add fade to family portrait.
