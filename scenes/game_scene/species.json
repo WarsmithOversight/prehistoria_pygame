@@ -6,6 +6,11 @@
     "sprite": "frog_01",
     "max_population": 5,
     "base_movement": 3,
+    "fight": "0",
+    "flight": "0",
+    "freeze": "2",
+    "territoriality": "0",
+    "climate": "0",
     "pathfinding": {
       "starting_location": {
         "search_biomes": ["floodplains", "tropical"],
@@ -27,6 +32,11 @@
     "sprite": "frog_01",
     "max_population": 5,
     "base_movement": 3,
+    "fight": "0",
+    "flight": "0",
+    "freeze": "2",
+    "territoriality": "0",
+    "climate": "0",
     "pathfinding": {
       "interactions": {
         "good": ["Marsh", "Woodlands", "Lake"],
@@ -41,7 +51,13 @@
     "lineage": "frog",
     "mya": "179",
     "sprite": "frog_01",
+    "max_population": 5,
     "base_movement": 3,
+    "fight": "0",
+    "flight": "0",
+    "freeze": "2",
+    "territoriality": "0",
+    "climate": "0",
     "pathfinding": {
       "interactions": {
         "good": ["Marsh", "Woodlands", "Lake"],
@@ -52,13 +68,18 @@
     },
     "evolves_to": "None"
   },
-  "Pulchrapollia": {
+  "Archaeopteryx": {
     "lineage": "bird",
     "is_starter": true,
-    "evolves_to": "Messelastur",
+    "mya": "150",
     "sprite": "bird_01",
     "max_population": 5,
     "base_movement": 2,
+    "fight": "0",
+    "flight": "2",
+    "freeze": "0",
+    "territoriality": "0",
+    "climate": "0",
     "pathfinding": {
       "starting_location": {
         "search_biomes": ["tropical", "temperate"],
@@ -72,14 +93,21 @@
       },
       "profiles": ["aerial"],
       "overrules": {}
-    }
+    },
+    "evolves_to": "Jeholornis"
+
   },
-  "Messelastur": {
+  "Jeholornis": {
     "lineage": "bird",
-    "evolves_to": "Palaeoborus",
+    "mya": "122",
     "sprite": "bird_02",
     "max_population": 5,
     "base_movement": 5,
+    "fight": "0",
+    "flight": "2",
+    "freeze": "0",
+    "territoriality": "0",
+    "climate": "0",
     "pathfinding": {
       "interactions": {
         "good": ["Woodlands", "Highlands"],
@@ -88,6 +116,7 @@
       },
       "profiles": ["aerial"],
       "overrules": {}
-    }
+    },
+    "evolves_to": "None"
   }
 }

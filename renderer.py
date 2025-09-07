@@ -2,8 +2,6 @@
 # The core rendering engine, responsible for sorting and drawing all visual elements.
 
 from shared_helpers import hex_to_pixel, hex_geometry
-import pygame, hashlib
-from load_ui_assets import get_font
 import pygame, hashlib, math
 
 # ──────────────────────────────────────────────────
@@ -458,29 +456,6 @@ def circle_type_interpreter(screen, drawable, persistent_state, assets_state, va
 
     # Draw the circle on the screen
     pygame.draw.circle(screen, color, (int(px), int(py)), radius, final_width)
-
-def text_type_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
-
-    # Convert hex coordinates to pixel coordinates
-    q = getattr(drawable, 'q', drawable.get('coord', [0, 0])[0])
-    r = getattr(drawable, 'r', drawable.get('coord', [0, 0])[1])
-    px, py = hex_to_pixel(q, r, persistent_state, variable_state)
-
-    # Adjust font size based on zoom so it stays readable
-    zoom = variable_state.get("var_current_zoom", 1.0)
-    base_size = drawable.get("base_size", 16)
-    font_size = max(8, int(base_size * zoom))
-
-    # ✨ FIX: Get the font from the central cache.    font_key = getattr(drawable, 'font_key', 'regular_medium')
-    font_key = getattr(drawable, 'font_key', 'regular_medium')
-    font = get_font(font_key)
-    text = str(getattr(drawable, 'text', drawable.get("text", "")))
-    color = getattr(drawable, 'color', drawable.get("color", (0, 0, 0)))
-
-    # Render the text and blit it to the screen
-    surf = font.render(text, True, color)
-    rect = surf.get_rect(center=(px, py))
-    screen.blit(surf, rect.topleft)
         
 def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
     """Helper to draw a quadratic Bézier curve."""
@@ -705,7 +680,6 @@ def render_indicator(screen, drawable, persistent_state, assets_state, variable_
 TYPEMAP = {
     "tile": tile_type_interpreter,
     "circle": circle_type_interpreter,
-    "text": text_type_interpreter,
     "artwork": artwork_interpreter,
     "path_curve": path_curve_interpreter,
     "ui_panel": ui_panel_interpreter,

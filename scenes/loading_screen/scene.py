@@ -11,7 +11,7 @@ import json
 from audio_manager import AudioManager
 from load_tile_assets import *
 from scenes.game_scene.load_assets import *
-from load_ui_assets import get_font
+from ui.ui_font_and_styles import get_font, get_style
 
 # 🌍 World Generation Imports (from this same folder)
 from .initialize_tiledata import *
@@ -101,9 +101,11 @@ class LoadingScene:
         
         except pygame.error: pass
 
-        # Renders the loading text
-        font = get_font("regular_large")
-        text_surf = font.render("Prehistoria Digital Prototype ... Loading ...", True, (200, 200, 200))
+        # ✨ Renders the loading text using the central style system
+        loading_style = get_style("highlight") # "highlight" uses a large, regular font
+        font = get_font(loading_style["font_size_key"])
+        text_color = loading_style["text_color"]
+        text_surf = font.render("Prehistoria Digital Prototype ... Loading ...", True, text_color)
         
         # Gets the rectangle for the text and positions it
         text_rect = text_surf.get_rect(bottomleft=(20, screen.get_height() - 20))

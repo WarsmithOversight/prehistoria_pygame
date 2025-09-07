@@ -2,41 +2,9 @@
 import os
 import pygame
 from shared_helpers import desaturate_surface
+from ui.ui_font_and_styles import initialize_font_cache
 
 DEBUG = True
-
-# ──────────────────────────────────────────────────
-# Fonts
-# ──────────────────────────────────────────────────
-
-def get_font(key="regular_medium"):
-    """Retrieves a font from the cache, falling back to the default if not found."""
-    font = _FONT_CACHE.get(key)
-    if not font and DEBUG: print(f"[assets] ⚠️ Font key '{key}' not found. Falling back to default.")
-    return font or _FONT_CACHE.get(_DEFAULT_FONT_KEY)
-
-# A module-level dictionary to act as a singleton cache for all font objects.
-_FONT_CACHE = {}
-_DEFAULT_FONT_KEY = "regular_medium"
-
-def initialize_font_cache():
-    """Loads all predefined fonts into the central cache. Call this once on startup."""
-    font_configs = {
-        # ✨ FIX: Point back to the static fonts that Pygame can render correctly.
-        "styles": {
-            "regular": "fonts/static/NotoSans-Regular.ttf",
-            "bold": "fonts/static/NotoSans-Bold.ttf"
-        },
-        "sizes": {"small": 10, "medium": 14, "large": 18},
-    }
-    for style_name, font_path in font_configs["styles"].items():
-        for size_name, size_pixels in font_configs["sizes"].items():
-            font_key = f"{style_name}_{size_name}"
-            try:
-                _FONT_CACHE[font_key] = pygame.font.Font(font_path, size_pixels)
-            except pygame.error:
-                if DEBUG: print(f"[assets] ❌ FONT ERROR: Could not load '{font_path}'. Key '{font_key}' is unavailable.")
-    if DEBUG: print(f"[assets] ✅ {len(_FONT_CACHE)} fonts loaded into cache.")
 
 # ──────────────────────────────────────────────────
 # Textures
@@ -108,7 +76,7 @@ def create_ui_border_assets(assets_state):
         {
             "source_key": "stone_full_res",
             "output_key": "stone_border_pieces",
-            "border_width": 4,                 
+            "border_width": 5,                 
             "desaturation": 0.6                  # Apply a slight desaturation for a grayer look
         }
     ]
@@ -171,6 +139,7 @@ def load_all_ui_assets(assets_state, persistent_state):
     """Orchestrator to run the entire UI asset creation pipeline."""
     assets_state["ui_assets"] = {}
     
+    initialize_font_cache()
     load_ui_textures(assets_state)
     create_grayscale_ui_watermarks(assets_state)
     create_ui_border_assets(assets_state)

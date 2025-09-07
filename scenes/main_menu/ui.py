@@ -1,6 +1,7 @@
 import pygame
-from ui_components import BasePanel, Button, assemble_organic_panel
-from ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
+from ui.ui_button_components import Button
+from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
+from ui.ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
 
 DEBUG: True
 

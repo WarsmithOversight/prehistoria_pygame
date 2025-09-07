@@ -3,9 +3,9 @@
 
 import pygame
 import random
-from ui_components import BasePanel, UIStaticImage
-from ui_dimensions import get_panel_dimensions
-from ui_components import assemble_organic_panel
+from ui.ui_generic_components import UIStaticImage
+from ui.ui_dimensions import get_panel_dimensions
+from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
 
 DEBUG = True
 

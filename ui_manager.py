@@ -3,7 +3,7 @@
 
 from scenes.game_scene.ui.ui_palette_panel import UIPalettePanel
 from scenes.game_scene.ui.ui_family_portrait import UIFamilyPortraitPanel
-from scenes.game_scene.ui.ui_hazard_queue import HazardQueuePanel
+from scenes.game_scene.ui.migration_event_panel import MigrationEventPanel
 
 DEBUG = True
 
@@ -13,14 +13,14 @@ DEBUG = True
 
 class UIManager:
     """Orchestrates all UI components, including static and dynamic panels."""
-    def __init__(self, persistent_state, assets_state, event_bus, initial_player, notebook, tween_manager, hazard_deck):
+    def __init__(self, persistent_state, assets_state, event_bus, initial_player, notebook, tween_manager):
             self.persistent_state = persistent_state
             self.assets_state = assets_state
             self.event_bus = event_bus
             self.notebook = notebook
             self.tween_manager = tween_manager
-            self.hazard_deck = hazard_deck
             self.players = [initial_player]
+            self.active_player = initial_player
             self.is_low_pop_glow_active = False
 
             # --- Panel Management ---
@@ -31,14 +31,19 @@ class UIManager:
 
             # 👂 Subscribe to game-wide events
             self.event_bus.subscribe("ACTIVE_PLAYER_CHANGED", self.on_active_player_changed)
-            self.event_bus.subscribe("HAZARD_EVENT_START", self.on_hazard_event_start)
             self.event_bus.subscribe("PLAYER_POPULATION_CHANGED", self.on_population_changed)
 
             # --- Initial Panel Creation ---
             # Create static panels like the palette here
             self.static_panels["ui_palette"] = UIPalettePanel(persistent_state, assets_state, notebook['tile_objects'], self.event_bus)
-            self.static_panels["hazard_queue"] = HazardQueuePanel(persistent_state, assets_state, self.tween_manager, self.hazard_deck, self.event_bus)
-    
+
+            # ✨ Create the new Migration Event panel
+            self.static_panels["migration_events"] = MigrationEventPanel(
+                persistent_state=persistent_state,
+                assets_state=assets_state,
+                tween_manager=self.tween_manager,
+                event_bus=event_bus)
+
             # Create the initial portrait for the starting player
             self.create_portrait_panel(initial_player)
 
@@ -50,20 +55,6 @@ class UIManager:
 
             if DEBUG:
                 print("[UIManager] ✅ UIManager instantiated and subscribed to events.")
-
-    def on_hazard_event_start(self, data=None):
-        """Flashes the screen glow when a hazard event triggers."""
-        print("[UIManager] 👂 Heard HAZARD_EVENT_START! Triggering glow pulse.") # <--- ADD THIS LINE
-        glow_drawable = self.notebook.get('SCREEN_GLOW')
-        if not glow_drawable: return
- 
-        # A "chained" tween: fade in, then on completion, fade out.
-        def fade_out():
-            # Only fade out if the persistent low-pop glow isn't active
-            if not self.is_low_pop_glow_active:
-                self.tween_manager.add_tween(glow_drawable, 'value', key_to_animate='alpha', start_val=255, end_val=0, duration=0.8, drawable_type='generic')
- 
-        self.tween_manager.add_tween(glow_drawable, 'value', key_to_animate='alpha', start_val=0, end_val=255, duration=0.2, drawable_type='generic', on_complete=fade_out)
          
     def on_population_changed(self, data):
         """Checks if any player has a low population to activate the persistent glow."""
@@ -83,6 +74,9 @@ class UIManager:
 
     def on_active_player_changed(self, new_player):
         """Event handler that fires when the turn changes, rebuilding player-specific UI."""
+        # Update our reference to the currently active player
+        self.active_player = new_player
+        
         if DEBUG: print(f"[UIManager] 👂 Heard ACTIVE_PLAYER_CHANGED for Player {new_player.player_id}. Rebuilding portrait.")
         
         # 1. 🗑️ Tear down the old panel using our new destroy method
@@ -142,8 +136,3 @@ class UIManager:
         # Update the dynamic portrait panel if it exists
         if self.portrait_panel:
             self.portrait_panel.update(notebook)
-
-    def toggle_hazard_queue(self):
-        """Delegates the toggle request to the hazard queue panel."""
-        if "hazard_queue" in self.static_panels:
-            self.static_panels["hazard_queue"].toggle_visibility()

@@ -218,10 +218,17 @@ class OffsetUpdater:
     def on_update(self, target, key, value): setattr(target, key, list(value))
 
 class GenericUpdater:
-    """A generic updater that simply sets a key on the target dictionary."""
+    """A flexible updater that can set a key on a dictionary or an attribute on an object."""
     def __init__(self, persistent_state, variable_state): pass
-    def on_start(self, target_dict, key, value): target_dict[key] = value
-    def on_update(self, target_dict, key, value): target_dict[key] = value
+    def _set_value(self, target, key, value):
+        """Internal helper to set a value on either a dict or an object."""
+        if isinstance(target, dict):
+            target[key] = value
+        else:
+            setattr(target, key, value)
+
+    def on_start(self, target, key, value): self._set_value(target, key, value)
+    def on_update(self, target, key, value): self._set_value(target, key, value)
 
 class PlayerTokenUpdater:
     def __init__(self, persistent_state, variable_state):

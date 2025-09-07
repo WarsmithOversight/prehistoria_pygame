@@ -1,4 +1,4 @@
-# player.py
+# scenes/game_scene/player.py
 # Contains the Player class that manages a player's state.
 
 import random
@@ -100,6 +100,13 @@ class Player:
         self.movement_points = self.species_data["base_movement"]
         self.remaining_movement = self.movement_points 
         self.turn_movement_modifier = 0
+        
+        # 📊 Refresh hazard resolution stats
+        self.fight = int(self.species_data.get("fight", 0))
+        self.flight = int(self.species_data.get("flight", 0))
+        self.freeze = int(self.species_data.get("freeze", 0))
+        self.territoriality = int(self.species_data.get("territoriality", 0))
+        self.climate = int(self.species_data.get("climate", 0))
 
         # 🗺️ Parse all pathfinding rules into quickly accessible attributes
         pathfinding_data = self.species_data.get("pathfinding", {})

@@ -9,6 +9,7 @@
 - [ ] Add "Load Saved Map" feature
 - [x] Add Loading screen, splash screen and soundtrack
 - [x] Add welcome screen
+- [ ] Move audiomanager loading to loading screen
 
 ## 3. Player 2
 - [x] Player Token and json species entry
@@ -25,8 +26,7 @@
 ## 5. Hazard Events
 - [x] Add Hazard Queue
 - [ ] Add Hazard Event
-- [ ] Add Fight / Flight / Freeze/ Territoriality and Climate stats
-- [ ] Implement Ambushers / Seekers / Apex Predators / Rivals / Climate Events
+- [x] Implement Ambushers / Seekers / Apex Predators / Rivals / Climate Events
 - [ ] Add Aurornis / Archaeopteryx / Jeholornis
 - [ ] Implement Pack Hunters
 - [ ] Add Empowered Hazards

@@ -2,8 +2,10 @@
 # The UI Panel for the game's initial welcome screen.
 
 import pygame
-from ui_components import BasePanel, Button, UITextBlock, assemble_organic_panel
-from ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
+from ui.ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
+from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
+from ui.ui_button_components import Button
+from ui.ui_generic_components import UITextBlock
 
 DEBUG = True
 
@@ -58,8 +60,8 @@ class UIWelcomePanel(BasePanel):
         # 📐 Layout & Assembly
         # ──────────────────────────────────────────────────
         self.layout_blueprint = [
-            {"id": "welcome_text"},
-            {"id": "continue_button"}
+            [{'id': 'welcome_text'}], 
+            [{'id': 'continue_button'}]
         ]
         
         # 1. Calculate final dimensions for the panel and all its child elements
@@ -88,30 +90,34 @@ class UIWelcomePanel(BasePanel):
         start_x = (self.surface.get_width() - content_w) / 2
         current_y = (self.surface.get_height() - content_h) / 2 + pad_y
 
-        for item in self.layout_blueprint:
-            item_id = item.get("id")
-            element_def = self.element_definitions.get(item_id)
-            if not element_def: continue
-
-            elem_dims_data = self.dims['element_dims'][item_id]
-            elem_w, elem_h = elem_dims_data["final_size"]
-            elem_x = start_x + (content_w - elem_w) / 2 # Center horizontally
-            
-            element_rect = pygame.Rect(elem_x, current_y, elem_w, elem_h)
-
-            # Instantiate the correct component class
-            if element_def.get("type") == "button":
-                # Pass the main self.dims dictionary for uniform button geometry
-                button = Button(rect=element_rect, text=element_def["text_options"][0], assets_state=self.assets_state, style=element_def["style"], dims=self.dims, callback=element_def["action"])
-                elements.append(button)
+        # ✨ FIX: Add a nested loop to correctly handle the list-of-lists format.
+        for row_items in self.layout_blueprint:
+            # This inner loop correctly accesses the item dictionary within the row list.
+            for item in row_items:
+                item_id = item.get("id")
+                element_def = self.element_definitions.get(item_id)
+                if not element_def: continue
+ 
+                elem_dims_data = self.dims['element_dims'][item_id]
+                elem_w, elem_h = elem_dims_data["final_size"]
+                elem_x = start_x + (content_w - elem_w) / 2 # Center horizontally
                 
-            elif element_def.get("type") == "text_block":
-                text_block = UITextBlock(rect=element_rect, text=element_def["content"], style=element_def["style"], assets_state=self.assets_state)
-                elements.append(text_block)
+                element_rect = pygame.Rect(elem_x, current_y, elem_w, elem_h)
+ 
+                # Instantiate the correct component class
+                if element_def.get("type") == "button":
+                    # Pass the main self.dims dictionary for uniform button geometry
+                    button = Button(rect=element_rect, text=element_def["text_options"][0], assets_state=self.assets_state, style=element_def["style"], dims=self.dims, callback=element_def["action"])
+                    elements.append(button)
+                    
+                elif element_def.get("type") == "text_block":
+                    wrapped_lines = elem_dims_data["wrapped_lines"]
+                    text_block = UITextBlock(rect=element_rect, line_data=wrapped_lines, style=element_def["style"], assets_state=self.assets_state)
+                    elements.append(text_block)
+ 
+                # Advance the y-position for the next element in the row
+                current_y += elem_h + pad_y
 
-            # Advance the y-position for the next element
-            current_y += elem_h + pad_y
-            
         return elements
 
     def handle_events(self, events, mouse_pos):

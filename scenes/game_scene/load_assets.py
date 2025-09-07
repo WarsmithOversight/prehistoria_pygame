@@ -1,7 +1,7 @@
 # scenes/game_scene/load_assets.py
 import os
 import pygame
-from shared_helpers import build_zoom_steps, desaturate_surface
+from shared_helpers import build_zoom_steps
 
 DEBUG = True
 

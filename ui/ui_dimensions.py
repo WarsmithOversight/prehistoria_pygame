@@ -1,7 +1,7 @@
 # ui/ui_dimensions.py
 # A centralized module for calculating all complex UI geometry.
 
-from load_ui_assets import get_font
+from ui.ui_font_and_styles import get_font
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -10,8 +10,9 @@ DEBUG = True
 
 TEXT_PADDING = (10, 10)
 CARD_TEXT_PADDING = (15, 15)
-NEW_CORNER_OFFSET = 15
-BUTTON_CORNER_CHAOS_FACTOR = 3
+NEW_CORNER_OFFSET = 14
+BUTTON_STROKE_PADDING = 2 
+BUTTON_CORNER_CHAOS_FACTOR = 0.6 # Ratio of available space for chaos. 0.6 = 60%
 UI_ELEMENT_PADDING = (20, 20)
 INNER_CHAOS_OFFSET_DIVISOR = 2
 
@@ -33,7 +34,6 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
     for item_id, element_def in element_definitions.items():
         if element_def.get("type") == "button":
 
-            # ✨ FIX: Use the new centralized get_font function.
             font = get_font(element_def["style"]["font_size_key"])
             for text in element_def["text_options"]:
                 w, h = font.size(text)
@@ -50,11 +50,12 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
         padded_h = max_button_text_h + (TEXT_PADDING[1] * 2) + (chaos_offset * 2)
         hex_bg_w = padded_w + (2 * NEW_CORNER_OFFSET)
         hex_bg_h = padded_h
-        final_w = hex_bg_w + tile_dim + (BUTTON_CORNER_CHAOS_FACTOR * 2)
-        final_h = hex_bg_h + tile_dim + (BUTTON_CORNER_CHAOS_FACTOR * 2)
-        
+        final_w = hex_bg_w + (tile_dim * 2) + (BUTTON_STROKE_PADDING * 2)
+        final_h = hex_bg_h + (tile_dim * 2) + (BUTTON_STROKE_PADDING * 2)
+
         # Store this uniform geometry in the main dims dict for all buttons to use
         dims["uniform_button_final_size"] = (final_w, final_h)
+        dims["button_stroke_padding"] = BUTTON_STROKE_PADDING
         dims["hexagonal_background_size"] = (hex_bg_w, hex_bg_h)
         dims["hexagonal_corner_points"] = [
             (NEW_CORNER_OFFSET, 0), (NEW_CORNER_OFFSET + padded_w, 0),
@@ -69,25 +70,28 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
             final_w, final_h = dims["uniform_button_final_size"]
             dims['element_dims'][item_id] = {"final_size": (final_w, final_h)}
  
-        elif element_def.get("type") == "text_block":
+        elif element_def.get("type") in ["text_block", "stat_display"]:
 
-            # 📏 1. Calculate the size of the text content itself.
+            # 📏 1. Calculate the actual dimensions of the wrapped text content.
             max_text_width = element_def["properties"]["max_width"]
-            font = get_font(element_def["style"]['font_size_key'])
-            text_height = _calculate_wrapped_text_height(element_def["content"], font, max_text_width)
+            # ✨ FIX: Safely get the style and provide a default font key to prevent crashes.
+            style = element_def.get("style", {})
+            font_key = style.get('font_size_key', "regular_medium") # Default to a standard font
+            font = get_font(font_key)
+            content_w, content_h, wrapped_lines = _calculate_text_block_dims(element_def["content"], font, max_text_width)
  
-            # ✨ 2. Add padding to get the final card/element size.
-            pad_w, pad_h = CARD_TEXT_PADDING
-            final_width = max_text_width + (pad_w * 2)
-            final_height = text_height + (pad_h * 2)
-  
-            dims['element_dims'][item_id] = {"final_size": (final_width, final_height)}
+            # ✨ 2. For simple text blocks, the final size is just the content size.
+            # The container panel will add the appropriate padding around the group.
+            final_width = content_w
+            final_height = content_h
+
+            dims['element_dims'][item_id] = {"final_size": (final_width, final_height), "wrapped_lines": wrapped_lines}
 
         elif element_def.get("type") == "static_image":
             size = element_def["properties"]["size"]
             dims['element_dims'][item_id] = {"final_size": size}
 
-# ──────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────
     # 🖼️ 2. Process Layout Blueprint to Calculate Row and Panel Sizes
     # ──────────────────────────────────────────────────    
     pad_x, pad_y = UI_ELEMENT_PADDING
@@ -159,19 +163,54 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
     final_panel_w = panel_background_w + border_dim
     final_panel_h = panel_background_h + border_dim
     dims["final_panel_size"] = (final_panel_w, final_panel_h)
+
+    # ──────────────────────────────────────────────────
+    # 📍 3. Calculate Final Element Positions (Offsets)
+    # ──────────────────────────────────────────────────
+    # This final step calculates the top-left (x, y) coordinate for each
+    # element relative to the panel's main surface.
+    dims['element_offsets'] = {}
+    content_w, content_h = dims["panel_background_size"]
     
+    # Calculate the starting y-position to center the entire content block vertically.
+    current_y = (final_panel_h - content_h) / 2 
+
+    for i, row_items in enumerate(layout_blueprint):
+
+        # Calculate the starting x-position to center this specific row horizontally.
+        row_width = dims['row_widths'][i]
+        current_x = (final_panel_w - row_width) / 2 
+
+        for item in row_items:
+            item_id = item.get("id")
+            if not item_id: continue
+ 
+            # Store the calculated top-left position for this element.
+            dims['element_offsets'][item_id] = (current_x, current_y)
+ 
+            # Advance the x-cursor for the next element in the row.
+            elem_w, _ = dims['element_dims'][item_id]["final_size"]
+            current_x += elem_w + pad_x
+ 
+        # Advance the y-cursor for the next row.
+        current_y += dims['row_heights'][i] + pad_y
+
     # 🔊 Print a dynamic success message with useful dev info.
     if DEBUG:
         print(f"[ui_dimensions] ✅ Dimensions for '{panel_id}' panel ({len(layout_blueprint)} elements) calculated. Final size: {final_panel_w}x{final_panel_h}.")
     return dims
 
-def _calculate_wrapped_text_height(text, font, max_width):
-    """A helper function to calculate the total height of wrapped text."""
-    lines = []
+def _calculate_text_block_dims(text, font, max_width):
+    """
+    A helper function to calculate the final width, height, and the wrapped
+    lines for a block of text. Returns (actual_width, actual_height, line_data).
+    """
+    line_data = [] # ✨ Now returns the rich line data, not just strings
+    max_line_width = 0
     paragraphs = text.split('\n')
     for para in paragraphs:
         if not para:
-            lines.append("")
+            line_data.append({'text': '', 'is_last_in_para': True})
             continue
         words = para.split(' ')
         current_line_words = []
@@ -179,11 +218,18 @@ def _calculate_wrapped_text_height(text, font, max_width):
             current_line_words.append(word)
             line_text = ' '.join(current_line_words)
             line_width, _ = font.size(line_text)
+            if line_width > max_line_width:
+                max_line_width = line_width
             if line_width > max_width:
                 word_that_didnt_fit = current_line_words.pop()
-                final_line_text = ' '.join(current_line_words)
-                lines.append(final_line_text)
+                line_data.append({'text': ' '.join(current_line_words), 'is_last_in_para': False})
                 current_line_words = [word_that_didnt_fit]
         if current_line_words:
-            lines.append(' '.join(current_line_words))
-    return len(lines) * font.get_linesize()
+            # This is the last line of the current paragraph.
+            line_data.append({'text': ' '.join(current_line_words), 'is_last_in_para': True})
+    final_width = min(max_width, max_line_width)
+    if not final_width and " " not in text and "\n" not in text: # Handle single short words
+        final_width, _ = font.size(text)
+        
+    final_height = len(line_data) * font.get_linesize()
+    return final_width, final_height, line_data

@@ -6,8 +6,8 @@ from scenes.scene_manager import SceneManager
 from renderer import render_giant_z_pot, initialize_render_states
 from shared_helpers import initialize_shared_helper_states
 from tween_manager import TweenManager
-from load_ui_assets import initialize_font_cache
 from load_tile_assets import initialize_asset_states
+
 
 # ──────────────────────────────────────────────────
 # 🎨 Config & Constants
@@ -20,8 +20,6 @@ DEBUG = True
 # ──────────────────────────────────────────────────
 
 pygame.init()
-pygame.font.init()
-initialize_font_cache()
 screen = pygame.display.set_mode((1280, 840))
 pygame.display.set_caption("Prehistoria Digital Prototype")
 clock = pygame.time.Clock()
