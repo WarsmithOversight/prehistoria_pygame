@@ -76,7 +76,7 @@ def get_panel_dimensions(panel_id, element_definitions, layout_blueprint, assets
             max_text_width = element_def["properties"]["max_width"]
             # ✨ FIX: Safely get the style and provide a default font key to prevent crashes.
             style = element_def.get("style", {})
-            font_key = style.get('font_size_key', "regular_medium") # Default to a standard font
+            font_key = style.get('font_size_key', "regular_14") # Default to a standard font
             font = get_font(font_key)
             content_w, content_h, wrapped_lines = _calculate_text_block_dims(element_def["content"], font, max_text_width)
  

@@ -14,7 +14,7 @@ class Player:
     # ────────────────────────────────────────────────── #
     # ⚙️ Initialization & State Management
     # ──────────────────────────────────────────────────
-    def __init__(self, player_id, lineage_name, all_species_data, tile_objects, notebook, assets_state, persistent_state, event_bus):
+    def __init__(self, player_id, lineage_name, all_species_data, tile_objects, notebook, assets_state, persistent_state, event_bus, tween_manager, variable_state):
 
         # ⚙️ Set one-time player attributes that persist through evolutions
         self.player_id = player_id
@@ -22,6 +22,11 @@ class Player:
         self.token_key = f"player_token_{self.player_id}"
         self.evolution_points = 0
         self.event_bus = event_bus
+        self.notebook = notebook
+        self.persistent_state = persistent_state
+        self.variable_state = variable_state
+        self.tween_manager = tween_manager
+        self.variable_state = variable_state # Or get from wherever it is available
         
         # 🏞️ Define a local helper to find the starting species
         def _find_starter_species_for_lineage(lineage_name, all_species_data):
@@ -59,7 +64,7 @@ class Player:
         
         # 🖌️ Create the visual token in the game's notebook
         self._create_token_drawable(notebook, assets_state, persistent_state)
-        
+
         # Report successful creation
         print(f"[Player] ✅ Player {self.player_id} ({self.species_name}) created at {self.q},{self.r}.")
 
@@ -105,8 +110,9 @@ class Player:
         self.fight = int(self.species_data.get("fight", 0))
         self.flight = int(self.species_data.get("flight", 0))
         self.freeze = int(self.species_data.get("freeze", 0))
+        self.climate_resistance = int(self.species_data.get("climate_resistance", 0))
         self.territoriality = int(self.species_data.get("territoriality", 0))
-        self.climate = int(self.species_data.get("climate", 0))
+        self.climate_resistance = int(self.species_data.get("climate_resistance", 0))
 
         # 🗺️ Parse all pathfinding rules into quickly accessible attributes
         pathfinding_data = self.species_data.get("pathfinding", {})
@@ -124,26 +130,100 @@ class Player:
         print(f"[Player] ✅ Player {self.player_id} species set to {self.species_name}.")
 
     def take_population_damage(self, amount):
-        """
-        Reduces current population by a given amount and posts an event if a
-        change occurred.
-        """
-        # ❤️ Store the population before applying damage to check for changes.
-        old_population = self.current_population
- 
-        # 🛡️ Decrease the current population, ensuring it doesn't go below zero.
-        self.current_population = max(0, self.current_population - amount)
- 
-        # 📢 If the population actually changed, announce it to the event bus.
-        if self.current_population != old_population:
-            print(f"[Player] 💔 Player {self.player_id} took {amount} damage. Population is now {self.current_population}.")
-            
-            self.event_bus.post("PLAYER_POPULATION_CHANGED", {
-                "player_id": self.player_id,
-                "species_name": self.species_name,
-                "current_population": self.current_population,
-                "max_population": self.max_population
-            })
+            """
+            Reduces current population by a given amount and posts an event if a
+            change occurred.
+            """
+            # ❤️ Store the population before applying damage to check for changes.
+            old_population = self.current_population
+    
+            # 🛡️ Decrease the current population, ensuring it doesn't go below zero.
+            self.current_population = max(0, self.current_population - amount)
+    
+            # 📢 If the population actually changed, announce it to the event bus.
+            if self.current_population != old_population:
+                print(f"[Player] 💔 Player {self.player_id} took {amount} damage. Population is now {self.current_population}.")
+                
+                self.event_bus.post("PLAYER_POPULATION_CHANGED", {
+                    "player_id": self.player_id,
+                    "species_name": self.species_name,
+                    "current_population": self.current_population,
+                    "max_population": self.max_population
+                })
+
+                # 🎨 Trigger the glow pulse animation via your tween manager
+                # ✨ Target the single, shared glow drawable now.
+                glow_drawable = self.notebook.get('SCREEN_GLOW')
+                if glow_drawable:
+                # If population drops to exactly 1, trigger the persistent glow.
+                    if self.current_population == 1:
+                        # A single tween to fade the glow in and hold it.
+                        self.tween_manager.add_tween(
+                            target_dict=glow_drawable, animation_type='value',
+                            key_to_animate='alpha', start_val=glow_drawable['alpha'], end_val=70, duration=1.5
+                        )
+
+                    # If population drops but is not 1 and not 0, trigger a pulse.
+                    elif self.current_population > 0:
+
+                        # --- Create a more dramatic two-stage pulse ---
+                        def create_slow_fade_out():
+                            self.tween_manager.add_tween(
+                                target_dict=glow_drawable, animation_type='value',
+                                key_to_animate='alpha', start_val=255, end_val=0, duration=0.8
+                            )
+        
+                        # 1. A very fast, bright flash-in.
+                        self.tween_manager.add_tween(
+                            target_dict=glow_drawable, animation_type='value',
+                            key_to_animate='alpha', start_val=glow_drawable['alpha'], end_val=255, duration=0.1,
+                            on_complete=create_slow_fade_out
+                        )
+
+                        # ✨ NEW: Trigger the screen shake at the same time as the glow pulse.
+                        self.trigger_screen_shake()
+
+                    # Optional: If population drops to 0, fade the glow out.
+                    else:
+                        self.tween_manager.add_tween(
+                            target_dict=glow_drawable, animation_type='value',
+                            key_to_animate='alpha', start_val=glow_drawable['alpha'], end_val=0, duration=0.5
+                        )
+
+            # ✨ Check for extinction after applying damage.
+            if self.current_population <= 0:
+                print(f"[Player] ☠️ Player {self.player_id} ({self.species_name}) has gone extinct.")
+                self.event_bus.post("PLAYER_EXTINCT", {
+                    "player": self
+                })
+
+
+    def trigger_screen_shake(self):
+        """A helper to create a slight camera shake effect."""
+        # The key we want to animate inside the variable_state dictionary
+        target_key = 'var_render_offset'
+        
+        shake_amount = 4 # Pixels - keep this small for a 'slight' shake
+        
+        # Get the current position tuple
+        start_pos = self.variable_state.get(target_key, (0, 0))
+        shake_pos = (start_pos[0] + shake_amount, start_pos[1] - shake_amount)
+
+        # This function will be called after the first shake to return the camera to normal
+        def shake_back():
+            self.tween_manager.add_tween(
+                target_dict=self.variable_state, animation_type='value', drawable_type='generic',
+                key_to_animate=target_key,
+                start_val=shake_pos, end_val=start_pos, duration=0.15
+            )
+
+        # Start the first tween to shake the camera
+        self.tween_manager.add_tween(
+            target_dict=self.variable_state, animation_type='value', drawable_type='generic',
+            key_to_animate=target_key,
+            start_val=start_pos, end_val=shake_pos, duration=0.1,
+            on_complete=shake_back
+        )
 
     def get_interaction_for_tile(self, tile):
         """

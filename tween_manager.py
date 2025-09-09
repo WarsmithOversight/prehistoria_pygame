@@ -8,7 +8,7 @@ from shared_helpers import hex_to_pixel, hex_geometry, get_point_on_bezier_curve
 # 🎨 Config & Constants
 # ──────────────────────────────────────────────────
 
-DEBUG = True # Set to True to get print statements from tweens
+DEBUG = False # Set to True to get print statements from tweens
 
 def ease_in_out_cubic(t):
     """A classic easing function for smooth acceleration and deceleration."""

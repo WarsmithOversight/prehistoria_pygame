@@ -6,11 +6,11 @@
     "sprite": "frog_01",
     "max_population": 5,
     "base_movement": 3,
-    "fight": "0",
-    "flight": "0",
-    "freeze": "2",
-    "territoriality": "0",
-    "climate": "0",
+    "fight": "2",
+    "flight": "1",
+    "freeze": "3",
+    "territoriality": "2",
+    "climate_resistance": "2",
     "pathfinding": {
       "starting_location": {
         "search_biomes": ["floodplains", "tropical"],
@@ -36,7 +36,7 @@
     "flight": "0",
     "freeze": "2",
     "territoriality": "0",
-    "climate": "0",
+    "climate_resistance": "0",
     "pathfinding": {
       "interactions": {
         "good": ["Marsh", "Woodlands", "Lake"],
@@ -46,7 +46,7 @@
       "profiles": ["grounded", "riverine", "lacustrine"]
     },
     "evolves_to": "Notobatrachus"
-    },
+  },
   "Notobatrachus": {
     "lineage": "frog",
     "mya": "179",
@@ -56,8 +56,8 @@
     "fight": "0",
     "flight": "0",
     "freeze": "2",
-    "territoriality": "0",
-    "climate": "0",
+    "territoriality": "2",
+    "climate_resistance": "2",
     "pathfinding": {
       "interactions": {
         "good": ["Marsh", "Woodlands", "Lake"],
@@ -68,18 +68,18 @@
     },
     "evolves_to": "None"
   },
-  "Archaeopteryx": {
+  "Aurornis": {
     "lineage": "bird",
     "is_starter": true,
     "mya": "150",
     "sprite": "bird_01",
     "max_population": 5,
     "base_movement": 2,
-    "fight": "0",
-    "flight": "2",
-    "freeze": "0",
-    "territoriality": "0",
-    "climate": "0",
+    "fight": "2",
+    "flight": "3",
+    "freeze": "1",
+    "territoriality": "2",
+    "climate_resistance": "2",
     "pathfinding": {
       "starting_location": {
         "search_biomes": ["tropical", "temperate"],
@@ -91,11 +91,32 @@
         "medium": ["Scrublands", "Marsh"],
         "bad": ["DesertDunes"]
       },
+      "profiles": ["glide"],
+      "overrules": {}
+    },
+    "evolves_to": "Archaeopteryx"
+  },
+  "Archaeopteryx": {
+    "lineage": "bird",
+    "mya": "122",
+    "sprite": "bird_02",
+    "max_population": 5,
+    "base_movement": 5,
+    "fight": "0",
+    "flight": "2",
+    "freeze": "0",
+    "territoriality": "0",
+    "climate_resistance": "0",
+    "pathfinding": {
+      "interactions": {
+        "good": ["Woodlands", "Highlands"],
+        "medium": ["Plains"],
+        "bad": ["DesertDunes", "Scrublands", "Marsh"]
+      },
       "profiles": ["aerial"],
       "overrules": {}
     },
     "evolves_to": "Jeholornis"
-
   },
   "Jeholornis": {
     "lineage": "bird",
@@ -107,7 +128,7 @@
     "flight": "2",
     "freeze": "0",
     "territoriality": "0",
-    "climate": "0",
+    "climate_resistance": "0",
     "pathfinding": {
       "interactions": {
         "good": ["Woodlands", "Highlands"],

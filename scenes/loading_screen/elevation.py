@@ -122,7 +122,9 @@ def calculate_topographic_scale(tiledata, persistent_state):
     # Normalize and apply the topographic scale to each tile
     for data in land_tiles:
         if data.get('dist_to_mountain') is not None:
-            data['topographic_scale'] = 1.0 - ((data['dist_to_mountain'] - min_dist) / dist_range)
+            # ✨ Round the final value to 4 decimal places for cleaner data.
+            value = 1.0 - ((data['dist_to_mountain'] - min_dist) / dist_range)
+            data['topographic_scale'] = round(value, 4)
 
     # Log completion for debugging
     if DEBUG:
@@ -187,6 +189,7 @@ def calculate_vertical_scale(tiledata, persistent_state):
     if DEBUG:
         print(f"[elevation] ✅ Vertical north-to-south scale calculated.")
 
+
 def combine_and_normalize_elevation(tiledata, persistent_state, weights):
     """
     Combines the three scales into a final, normalized elevation value.
@@ -224,7 +227,9 @@ def combine_and_normalize_elevation(tiledata, persistent_state, weights):
 
     # Normalize each raw elevation value and store it in the tile's data
     for coord, final_val in final_elevations.items():
-        tiledata[coord]['final_elevation'] = (final_val - min_elev) / range_elev
+        normalized_value = (final_val - min_elev) / range_elev
+        # ✨ Round the final value to 4 decimal places for cleaner data.
+        tiledata[coord]['final_elevation'] = round(normalized_value, 4)
 
     # Log completion for debugging
     print(f"[elevation] ✅ Combined and stored final elevation for {len(land_tiles)} tiles.")

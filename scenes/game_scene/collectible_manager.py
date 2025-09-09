@@ -2,6 +2,98 @@
 # A home for standalone game elements that manage their own state and logic.
 
 import random
+import math
+from shared_helpers import axial_distance, hex_to_pixel
+
+# ──────────────────────────────────────────────────
+# ⚙️ Collectible Manager (The "Battery")
+# ──────────────────────────────────────────────────
+class CollectibleManager:
+    """Manages all logic related to collectibles, including seeding and collection."""
+    def __init__(self, event_bus, notebook, tween_manager, persistent_state, players, tile_objects, audio_manager):
+        # ⚙️ Core System References
+        self.event_bus = event_bus
+        self.notebook = notebook
+        self.tween_manager = tween_manager
+        self.audio_manager = audio_manager
+        self.persistent_state = persistent_state
+
+        # 🚩 State
+        self.active_player = players[0] # Start with the first player
+
+        # 💎 State
+        self.collectibles = seed_collectibles(persistent_state, tile_objects, notebook, tween_manager, players)
+
+        # 👂 Event Subscriptions
+        self.event_bus.subscribe("PLAYER_LANDED_ON_TILE", self.on_player_landed)
+        self.event_bus.subscribe("ACTIVE_PLAYER_CHANGED", self.on_active_player_changed)
+
+    def update(self, dt):
+        """Update loop for continuous logic, like the nearest collectible indicator."""
+        self._update_nearest_collectible_indicator()
+
+    def on_player_landed(self, data):
+        """Checks if a player has landed on a collectible and processes the outcome."""
+        player = data["player"]
+        tile = data["tile"]
+
+        # 🛡️ Guard clause if tile data is missing
+        if not tile: return
+
+        # Check if a collectible exists at this coordinate.
+        collected_item = next((c for c in self.collectibles if (c.q, c.r) == (tile.q, tile.r)), None)
+        if collected_item:
+            print(f"[CollectibleManager] ✅ Player {player.player_id} collected an item.")
+            self.audio_manager.play_sfx(blacklist=["game_over_cartoon_2.wav", "error.wav", "try_again.wav", "earn_points.wav", "secret_area_unlock_1", "soft_fail"])
+            player.gain_evolution_points()
+            collected_item.cleanup(self.notebook, self.tween_manager)
+            self.collectibles.remove(collected_item)
+            self.event_bus.post("REQUEST_HAZARD_EVENT", {"trigger": "collectible"})
+
+    def on_active_player_changed(self, player):
+        """Updates the internal reference to the current active player."""
+        self.active_player = player
+
+    def _find_nearest_collectible(self):
+        """Finds the active player's nearest collectible."""
+        if not self.collectibles:
+            return None
+
+        return min(
+            self.collectibles,
+            key=lambda c: axial_distance(self.active_player.q, self.active_player.r, c.q, c.r)
+        )
+
+    def _update_nearest_collectible_indicator(self):
+        """Calculates the angle to the nearest collectible and updates the drawable."""
+        indicator_key = "collectible_indicator"
+        player = self.active_player
+        player_token = self.notebook.get(player.token_key)
+        nearest_collectible = self._find_nearest_collectible()
+
+        if not nearest_collectible or not player_token:
+            if indicator_key in self.notebook:
+                del self.notebook[indicator_key]
+            return
+            
+        world_variable_state = {"var_current_zoom": 1.0, "var_render_offset": (0,0)}
+
+        if 'pixel_pos' in player_token: 
+            player_pos = player_token['pixel_pos'] 
+        else: 
+            player_pos = hex_to_pixel(player.q, player.r, self.persistent_state, world_variable_state)
+
+        target_pos = hex_to_pixel(nearest_collectible.q, nearest_collectible.r, self.persistent_state, world_variable_state)
+ 
+        dx = target_pos[0] - player_pos[0]
+        dy = target_pos[1] - player_pos[1]
+        angle_deg = math.degrees(math.atan2(-dy, dx))
+
+        z_formula = self.persistent_state["pers_z_formulas"]["indicator"]
+        self.notebook[indicator_key] = {
+            "type": "indicator", "q": player.q, "r": player.r,
+            "anchor_world_pos": player_pos, "angle": angle_deg, "z": z_formula(player.r)
+        }
 
 # ──────────────────────────────────────────────────
 # 🏭 Seeding Function

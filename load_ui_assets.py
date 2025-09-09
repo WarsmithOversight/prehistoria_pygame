@@ -110,28 +110,34 @@ def create_ui_border_assets(assets_state):
         assets_state["ui_assets"][style["output_key"]] = border_pieces
         print(f"[assets] ✅ Created 9 UI border pieces for style '{style['output_key']}'.")
 
-def create_screen_edge_glow(screen_size, color, thickness, steps=20):
-    """Creates a surface with a soft glow around the screen edges."""
+# ui_assets.py
+
+def create_screen_edge_glow(screen_size, color, thickness):
+    """Creates a surface with a soft, exponential glow around the screen edges."""
     width, height = screen_size
+    # Create the target surface with per-pixel alpha
     glow_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    base_color = color[:3]
     base_alpha = color[3] if len(color) > 3 else 255
+    
+    # Create a base rectangle for the full screen
+    base_rect = pygame.Rect(0, 0, width, height)
 
-    # ✨ FIX: Create an inset rectangle for drawing the glow.
-    # We shrink the rect by the maximum thickness (which is thickness/2 per side).
-    # This ensures the entire glow effect is rendered *inside* the screen bounds.
-    inset_rect = pygame.Rect(0, 0, width, height).inflate(-thickness, -thickness)
-
-    # Draw a series of concentric, fading rectangles to create the glow
-    for i in range(steps):
-        t = i / steps
-        alpha = base_alpha * (1 - t)**2 # Use a curve for a nicer falloff
-        rect_color = (color[0], color[1], color[2], int(alpha))
+    # Draw a series of shrinking, fading rectangle outlines from the edge inwards
+    for i in range(thickness):
+        # 't' represents our progress from the edge (0.0) to the inside (1.0)
+        t = i / thickness
         
-        # The rectangle gets thicker as it fades
-        rect_thickness = int(thickness * t) + 1
+        # Use an exponential curve for a nice, soft falloff
+        alpha = base_alpha * (1 - t)**2 
+        rect_color = (*base_color, int(alpha))
         
-        # Draw the glow line onto the new, smaller rectangle
-        pygame.draw.rect(glow_surface, rect_color, inset_rect, rect_thickness)
+        # Create a new rectangle inset by 'i' pixels
+        # inflate shrinks the rect; it applies to each side, so we multiply by 2
+        inset_rect = base_rect.inflate(-i * 2, -i * 2)
+        
+        # Draw the outline of the inset rectangle (1 pixel thick)
+        pygame.draw.rect(glow_surface, rect_color, inset_rect, 1)
  
     return glow_surface
 
@@ -150,6 +156,6 @@ def load_all_ui_assets(assets_state, persistent_state):
     # Now that we have the size, store it for any other systems that might need it.
     assets_state["screen_size"] = (screen_w, screen_h)
 
-    red_glow_color = (255, 50, 50, 150) # Red with some transparency
-    assets_state["ui_assets"]["screen_edge_glow_red"] = create_screen_edge_glow((screen_w, screen_h), red_glow_color, 60)
-
+    red_glow_color = (255, 50, 50, 150) # Red with a base alpha of 150
+    # The final argument is the 'thickness' in pixels, which you can easily edit here.
+    assets_state["ui_assets"]["screen_edge_glow_red"] = create_screen_edge_glow((screen_w, screen_h), red_glow_color, 80)

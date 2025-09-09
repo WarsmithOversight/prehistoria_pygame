@@ -36,11 +36,28 @@ class HazardCard:
     description: str = ""
 
     def __post_init__(self):
-        """Validate the card data after initialization."""
+        """Validate the card data after initialization to enforce data integrity."""
+        # 🎨 This dictionary maps each hazard type to the EXACT set of stats it's allowed to have.
+        # This aligns with our "Turn Logic into Data" principle.
+        VALID_STATS_MAP = {
+            "Predator": {"fight", "flight", "freeze"},
+            "Rival": {"territoriality"},
+            "Climate": {"climate_resistance"},
+        }
+ 
+        # 1. First, check Predator-specific rules (predator_type must exist).
         if self.hazard_type == "Predator" and not self.predator_type:
-            raise ValueError(f"HazardCard '{self.name}' is a Predator but has no predator_type.")
-        if self.hazard_type == "Rival" and "territoriality" not in self.eligible_stats:
-            raise ValueError(f"HazardCard '{self.name}' is a Rival but is missing 'territoriality' from eligible_stats.")
+            raise ValueError(f"'{self.name}': Predators must have a predator_type.")
+ 
+        # 2. Get the required set of stats for this card's type from our rules dictionary.
+        required_stats = VALID_STATS_MAP.get(self.hazard_type)
+ 
+        # 3. Use a single, clear set comparison to ensure the card's stats are exactly correct.
+        if not required_stats or set(self.eligible_stats) != required_stats:
+            raise ValueError(
+                f"'{self.name}' ({self.hazard_type}): Invalid stats. "
+                f"Expected exactly {list(required_stats or [])}, but got {self.eligible_stats}."
+            )
 
 # ──────────────────────────────────────────────────
 # 🏭 Hazard Card Factory
@@ -51,12 +68,16 @@ class HazardCardFactory:
     "dummy" cards for testing and fallback purposes.
     """
     def __init__(self):
-        # ✨ A list of fun, random names for the dummy cards, ported from the old system.
-        self.DUMMY_NAMES = [
-            "Fluffysaurus maximus", "Bouncysaurus", "Calamitasaurus",
+        # ✨ Specific name lists for different hazard types.
+        self.PREDATOR_RIVAL_NAMES = [
+            "Fluffysaurus", "Bouncysaurus", "Calamitasaurus",
             "Doofusaurus", "Gobblesaurus", "Wobblydocus", "Scampysaurus",
             "Snifflesaurus", "Plumpasaurus", "Munchosaurus", "Chonkylobodon",
             "Fartosaurus", "Quackadactylus", "Honkasaurus", "Goofydactylus"
+        ]
+        self.CLIMATE_NAMES = [
+            "Sandstorm", "Superheated Winds", "Droughtfront", "Flash Flood",
+            "Sudden Frost", "Monsoon", "Extended Drought", "Wildfire"
         ]
         
         # 🗺️ A comprehensive list of all possible terrains for empowerment conditions.
@@ -69,7 +90,7 @@ class HazardCardFactory:
         """Creates a single, randomized dummy card based on the defined blueprints."""
         # 🎲 --- Determine Card Type & Base Stats ---
         hazard_type: HazardType = random.choice(["Predator", "Rival", "Climate"])
-        base_name = random.choice(self.DUMMY_NAMES)
+        final_name = "" # Initialize empty name
         
         eligible_stats = []
         predator_type = None
@@ -77,18 +98,19 @@ class HazardCardFactory:
         if hazard_type == "Predator":
             eligible_stats = ["fight", "flight", "freeze"]
             predator_type = random.choice(["Apex", "Seeker", "Ambusher"])
-            final_name = base_name
+            final_name = random.choice(self.PREDATOR_RIVAL_NAMES)
         elif hazard_type == "Rival":
             eligible_stats = ["territoriality"]
-            final_name = base_name
+            final_name = random.choice(self.PREDATOR_RIVAL_NAMES)
         elif hazard_type == "Climate":
             eligible_stats = ["climate_resistance"]
-            final_name = base_name
+            final_name = random.choice(self.CLIMATE_NAMES)
 
         # 🎲 --- Determine Empowerment ---
         empowerment_condition = None
         if random.random() < 0.6: # 60% chance for a card to have an empowerment condition
             # Randomly select 1 or 2 terrains for the condition.
+            # TODO: It should just be 1 condition
             empower_terrains = random.sample(self.TERRAIN_TYPES, k=random.randint(1, 2))
             empowerment_condition = {"terrain": empower_terrains}
 
@@ -195,11 +217,40 @@ class HazardManager:
         Checks each card in the queue for empowerment based on the player's
         current location. This is the crucial data provider for the HazardView.
         """
-        # This will be properly implemented in the next step.
-        return [(card, False) for card in self.hazard_queue]
+        # Use our new helper to check each card in the queue.
+        return [(card, self._is_card_empowered(card)) for card in self.hazard_queue]
+
+    def _is_card_empowered(self, card: HazardCard) -> bool:
+        """
+        A helper function to determine if a single card is empowered based on
+        the player's current tile terrain.
+        """
+        # 1. A card can't be empowered if it has no condition.
+        if not card.empowerment_condition:
+            return False
+
+        # 2. Get the player's current tile from the main tile dictionary.
+        player_coord = (self.player.q, self.player.r)
+        current_tile = self.tile_objects.get(player_coord)
+        
+        # 3. If we can't find the tile, it can't be empowered.
+        if not current_tile:
+            return False
+
+        # 4. Get the list of terrains that empower this card.
+        empowering_terrains = card.empowerment_condition.get("terrain", [])
+        
+        # 5. Return True if the player's current terrain is in the list.
+        return current_tile.terrain in empowering_terrains
 
     def on_hazard_requested(self, event_data):
         """Callback function for when a hazard event is requested."""
+        
+        # 🛑 Guard Clause: Do not start a new hazard if one is already active.
+        if self.is_active:
+            print("[HazardManager] ⚠️ Hazard event requested, but one is already active. Request ignored.")
+            return
+        
         print(f"[HazardManager] ✅ Hazard event requested via '{event_data.get('trigger', 'Unknown Source')}'.")
 
         # 🎬 Tell the UI to start its sequence using the cards currently in the queue.
@@ -264,9 +315,9 @@ class HazardManager:
         self._fill_queue() # Draw a new card to replace the one we just resolved.
  
         # Clean up the manager's state for the next event.
-        self._reset_state()
+        self.deselect_card()
         
-    def _reset_state(self):
+    def deselect_card(self):
         """Cleans up the manager's state after an event concludes."""
         # resetting the active hazard card and active state
         self.active_hazard_card = None

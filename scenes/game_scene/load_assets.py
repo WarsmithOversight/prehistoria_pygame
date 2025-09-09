@@ -480,7 +480,7 @@ def load_family_portrait_assets(assets_state):
     """
     # 🎨 Config & Constants
     portraits_base_path = "scenes/game_scene/assets/artwork/family_portraits" # ✅ Corrected Path
-    PORTRAIT_SCALE_FACTOR = 0.5 # Adjust the size of the portraits. 1.0 is original size.
+    PORTRAIT_SCALE_FACTOR = 0.3 # Adjust the size of the portraits. 1.0 is original size.
     
     # ⚙️ Initialize the dictionary in the global assets state.
     assets_state["family_portraits"] = {}

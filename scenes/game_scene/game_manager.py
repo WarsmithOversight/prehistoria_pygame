@@ -9,14 +9,15 @@ DEBUG = True
 class GameManager:
     """Manages the overall game state, turn progression, and active player."""
 
-    def __init__(self, players, collectibles, camera_controller, tile_objects, event_bus, notebook, persistent_state):
+    def __init__(self, players, camera_controller, tile_objects, event_bus, notebook, persistent_state, tween_manager, hazard_manager):
         
         # Stores references to the core game systems
         self.players = players
-        self.collectibles = collectibles
         self.camera_controller = camera_controller
         self.tile_objects = tile_objects
         self.event_bus = event_bus
+        self.tween_manager = tween_manager
+        self.hazard_manager = hazard_manager
 
         # Stores references to global game state objects
         self.persistent_state = persistent_state
@@ -31,10 +32,11 @@ class GameManager:
 
         # 👂 Subscribe to events
         self.event_bus.subscribe("DEBUG_TRIGGER_HAZARD", self.on_debug_trigger_hazard)
-        self.event_bus.subscribe("MIGRATION_EVENT_SELECTED", self.on_migration_event_selected)
         # ✨ The GameManager now listens for when a move is completed to apply consequences.
         self.event_bus.subscribe("PLAYER_LANDED_ON_TILE", self.on_player_landed)
-
+        self.event_bus.subscribe("PLAYER_EXTINCT", self.on_player_extinct)
+        self.event_bus.subscribe("REQUEST_TILE_CONSEQUENCE", self.on_tile_consequence_requested)
+        self.event_bus.subscribe("ACTIVE_PLAYER_CHANGED", self.on_active_player_changed)
 
         # Initializes variables for player selection and movement
         self.selected_player = None
@@ -43,14 +45,9 @@ class GameManager:
         # Stores the active migration event for the turn
         self.active_migration_event = None
 
-        # Stores the coordinate of the nearest collectible for the current turn.
-        self.nearest_collectible_coord = None
-
     def update(self, dt):
         """The main update loop for the GameManager, called every frame."""
-        # We only need to update the indicator when the game is active.
-        if not self.is_paused:
-            self._update_nearest_collectible_indicator()
+        pass # The GameManager currently has no per-frame updates.
 
     @property
     def active_player(self):
@@ -60,42 +57,36 @@ class GameManager:
 
     def _setup_turn_for_player(self, player):
         """A centralized helper to prepare a player's state at the start of their turn."""
-        # 1. Determine and apply any start-of-turn movement modifiers
-        player.turn_movement_modifier = 0
-        start_coord = (player.q, player.r)
-        if start_tile := self.tile_objects.get(start_coord):
-            interaction = player.get_interaction_for_tile(start_tile)
-            if interaction in ["medium", "bad"]:
-                player.turn_movement_modifier = -1
-                print(f"[GameManager] ⚠️ Player {player.player_id} starts on difficult terrain. Movement reduced by 1.")
-        player.remaining_movement = player.movement_points + player.turn_movement_modifier
-
-        # 2. Find the nearest collectible for the new turn's objective.
-        self._find_and_store_nearest_collectible()
-
-        # 3. Select the new active player (which shows the UI)
+        # ✨ This method's only remaining job is to select the new active player.
+        # Movement calculation is now fully delegated to the MovementManager.
         self._select_player(self.active_player)
-
-        # 📢 5. Announce that all turn setup is complete and systems can now proceed.
-        self.event_bus.post("TURN_READY_FOR_INPUT")
 
     def _start_first_turn(self):
         """Handles the sequence of events to begin the first turn of the game."""
         
-        self._setup_turn_for_player(self.active_player)
-
         # 🎥 Announce that the camera should center on the starting player.
         self.event_bus.post("CENTER_CAMERA_ON_TILE", {
             "q": self.active_player.q, "r": self.active_player.r, "animated": True
         })
 
         # 📢 Announce that the first turn has officially begun.
-        self.event_bus.post("TURN_STARTED")
+        self.event_bus.post("TURN_STARTED", {"player": self.active_player})
         print(f"[GameManager] ✅ Game Start! Turn {self.turn_counter}, Player {self.active_player.player_id}'s turn.")
+
+        # ✨ Set the initial glow state for the first player.
+        self.on_active_player_changed(self.active_player)
+
+        # ✨ Select the player *after* the TURN_STARTED event has been posted.
+        self._setup_turn_for_player(self.active_player)
 
     def advance_turn(self):
         """Advances to the next player's turn and updates the turn counter."""
-        
+
+        # 🛑 Guard Clause: Do not advance the turn if a hazard is active.
+        if self.hazard_manager.is_active:
+            print("[GameManager] ⚠️ Cannot advance turn while a hazard event is active.")
+            return
+
         # Exits the function if the game is paused
         if self.is_paused: return
 
@@ -113,7 +104,7 @@ class GameManager:
         self.event_bus.post("ACTIVE_PLAYER_CHANGED", self.active_player)
 
         # 🌪️ Announce that a new turn has begun for any interested systems.
-        self.event_bus.post("TURN_STARTED")
+        self.event_bus.post("TURN_STARTED", {"player": self.active_player})
 
         # Increment the main turn counter only when a full round is complete
         if self.active_player_index == 0:
@@ -126,6 +117,9 @@ class GameManager:
         self.event_bus.post("CENTER_CAMERA_ON_TILE", {
             "q": self.active_player.q, "r": self.active_player.r, "animated": True
         })
+
+        # ✨ This is the crucial fix: set up the new player at the start of their turn.
+        self._setup_turn_for_player(self.active_player)
 
     def unpause(self):
         """Starts the first turn and allows the game to proceed."""
@@ -221,40 +215,36 @@ class GameManager:
         
         print(f"[GameManager] ✅ Added '{resource_type}' to tile {coord}. Total: {len(tile.tilebox['resources'])}.")
 
-    def on_migration_event_selected(self, event_data):
-        """Event handler for when the Migration Panel finishes its animation."""
-        self.active_migration_event = event_data
-        print(f"[GameManager] 🌪️ Received active migration event: {event_data.description}")
+    def on_player_extinct(self, data):
+        """Pauses the game when a player goes extinct."""
+        print("[GameManager] ⏸️ Player has gone extinct. Pausing game.")
+        self.is_paused = True
 
-        # ✨ This is now the TRUE start of the turn's logic, which we delegate
-        # to the centralized helper.
-        self._setup_turn_for_player(self.active_player)
+    def on_active_player_changed(self, new_player):
+        """
+        A listener that updates the persistent screen glow based on the new active
+        player's state. This centralizes control of the glow.
+        """
+        glow_drawable = self.notebook.get('SCREEN_GLOW')
+        if not glow_drawable: return
+ 
+        # 🛑 Cancel any existing tweens (like a damage pulse) to ensure a clean state change.
+        self.tween_manager.remove_tweens_by_target(glow_drawable)
+ 
+        # 🎯 Determine the target alpha based on the new player's health.
+        target_alpha = 0
+        if new_player.current_population == 1:
+            target_alpha = 70 # The persistent low-health glow value
+        
+        # ✨ Gently fade the glow to its new state for the current turn.
+        self.tween_manager.add_tween(
+            target_dict=glow_drawable, animation_type='value',
+            key_to_animate='alpha',
+            start_val=glow_drawable['alpha'],
+            end_val=target_alpha,
+            duration=0.5
+        )
 
-        # 5. Final turn message
-        print(f"[GameManager] ✅ Player {self.active_player.player_id}'s turn is active.")
-
-    def _check_migration_hazard_trigger_on_path(self, path):
-        """Checks if any tile in a path triggers the active migration event's hazard condition."""        
-        # Exits if there is no active climate event
-        if not self.active_migration_event:
-            return
-
-        effect = self.active_migration_event
-
-        # ✨ FIX: Access the attribute directly from the object, not with .get()
-        hazardous_terrains = effect.trigger_param
-
-        # Iterates through the path, skipping the starting tile
-        for coord in path[1:]: # Iterate through the path, skipping the starting tile
-            tile = self.tile_objects.get(coord)
-
-            # Checks if the tile's terrain is a hazardous one
-            if tile and tile.terrain in hazardous_terrains:
-                if DEBUG: print(f"[GameManager] 📢 Posting REQUEST_HAZARD_EVENT due to entering {tile.terrain}.")
-                # Announce the need for a hazard event; do not handle it directly.
-                self.event_bus.post("REQUEST_HAZARD_EVENT", {"trigger": "migration_event"})
-                return # Trigger only once per move
-            
     def evolve_player_to_next_stage(self, player):
             """
             Evolves a player to the next species in their defined lineage.
@@ -265,63 +255,6 @@ class GameManager:
             
             if not was_successful:
                 return
-
-    def _find_and_store_nearest_collectible(self):
-        """Finds the active player's nearest collectible and stores its coordinate."""
-        player = self.active_player
-        self.nearest_collectible_coord = None # Reset first
-
-        if not self.collectibles:
-            return
-
-        # Use axial_distance for grid-based distance, which is more accurate here.
-        nearest_collectible = min(
-            self.collectibles,
-            key=lambda c: axial_distance(player.q, player.r, c.q, c.r)
-        )
-        self.nearest_collectible_coord = (nearest_collectible.q, nearest_collectible.r)
-        print(f"[GameManager] ✅ Nearest collectible for Player {player.player_id} is at {self.nearest_collectible_coord}.")
-
-    def _update_nearest_collectible_indicator(self):
-        """Calculates the angle to the nearest collectible and updates the drawable."""
-        indicator_key = "collectible_indicator"
-        player = self.active_player
-        player_token = self.notebook.get(player.token_key)
-
-        # 🧹 Cleanup: If there's no target, remove the indicator.
-        if not self.nearest_collectible_coord or not player_token:
-            if indicator_key in self.notebook:
-                del self.notebook[indicator_key]
-            return
-            
-        # 📍 Get Player and Target positions in WORLD coordinates.
-        # This consistency is key to fixing the disappearing indicator.
-        world_variable_state = {"var_current_zoom": 1.0, "var_render_offset": (0,0)}
-
-        # Prioritize the animated world position if the player is moving.
-        if 'pixel_pos' in player_token: 
-            player_pos = player_token['pixel_pos'] 
-        else: 
-            player_pos = hex_to_pixel(player.q, player.r, self.persistent_state, world_variable_state)
-
-        # Get the target's world position.
-        target_pos = hex_to_pixel(self.nearest_collectible_coord[0], self.nearest_collectible_coord[1], self.persistent_state, world_variable_state)
- 
-        # 📐 Calculate Angle
-        dx = target_pos[0] - player_pos[0]
-        dy = target_pos[1] - player_pos[1]
-        angle_deg = math.degrees(math.atan2(-dy, dx))
-
-        # 📔 Update the Notebook
-        # The renderer only needs the player's base location and the angle.
-        z_formula = self.persistent_state["pers_z_formulas"]["indicator"]
-        self.notebook[indicator_key] = {
-            "type": "indicator",
-            "q": player.q, "r": player.r, # Keep q,r for z-sorting
-            "anchor_world_pos": player_pos, # Pass the definitive world position to the renderer
-            "angle": angle_deg,
-            "z": z_formula(player.r)
-        }
 
     def on_debug_trigger_hazard(self, data=None):
         """Handler for a debug request to start a hazard."""
@@ -339,20 +272,28 @@ class GameManager:
 
         if not tile: return
 
-        # --- Consequence 1: Check for Collectibles ---
-        collected_item = next((c for c in self.collectibles if (c.q, c.r) == (tile.q, tile.r)), None)
-        if collected_item:
-            self.audio_manager.play_sfx(blacklist=["game_over_cartoon_2.wav", "error.wav", "try_again.wav", "earn_points.wav", "secret_area_unlock_1", "soft_fail"])
-            player.gain_evolution_points()
-            collected_item.cleanup(self.notebook, self.tween_manager)
-            self.collectibles.remove(collected_item)
-
         # --- Consequence 2: Apply Movement Penalties ---
         interaction = player.get_interaction_for_tile(tile)
-        if interaction in ["medium", "bad"]:
+        if interaction == "bad":
             player.remaining_movement = 0
-        else:
+            print(f"[GameManager] ❌ Player landed on 'bad' terrain. Movement set to 0 and 1 damage taken.")
+            player.take_population_damage(1)
+        elif interaction == "medium":
+            player.remaining_movement = 0
+            print(f"[GameManager] ⚠️ Player landed on 'medium' terrain. Movement set to 0.")
+        else: # This handles 'good' and None interactions
             player.remaining_movement -= path_cost
 
-        # --- Consequence 3: Check for Migration Hazard Trigger ---
-        self._check_migration_hazard_trigger_on_path([(player.q, player.r)])
+    def on_tile_consequence_requested(self, data):
+        """
+        Applies consequences like population damage when requested by another system.
+        This keeps the GameManager as the sole arbiter of player stats.
+        """
+        player = data["player"]
+        consequence = data["consequence"]
+
+        if consequence == "population_damage":
+            amount = data.get("amount", 1)
+            print(f"[GameManager] ❌ Applying population damage to Player {player.player_id}.")
+            player.take_population_damage(amount)
+

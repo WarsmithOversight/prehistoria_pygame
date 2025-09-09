@@ -19,6 +19,9 @@ class CameraController:
         # Read the static configuration from persistent_state
         self.zoom_config = self.persistent_state["pers_zoom_config"]
 
+        # 💾 Set pan_speed once at the start.
+        self.pan_speed = pan_speed
+
         # Sync internal state with the initial values from variable_state
         self.offset = list(variable_state.get("var_render_offset", (0, 0)))
         self.dev_quickboot = bool(persistent_state.get("pers_dev_quickboot"))
@@ -29,8 +32,7 @@ class CameraController:
             self.zoom_config.update({"min_zoom": fixed, "max_zoom": fixed, "zoom_interval": 1.0})
             self.zoom = fixed
             variable_state["var_current_zoom"] = fixed
-            # make sure we still have this
-            self.pan_speed = pan_speed
+
             # Don’t run the dynamic min-zoom computation at all
             print(f"[Camera] ⚙️ Dev Quickboot: zoom locked at {fixed:.2f}.")
             print(f"[Camera] ✅ Camera controller initialized.")
@@ -73,11 +75,6 @@ class CameraController:
 
         # Immediately snap the initial zoom to be safe.
         self._snap_zoom()
-
-        # ──────────────────────────────────────────────────
-        # 💾 Internal State
-        # ──────────────────────────────────────────────────
-        self.pan_speed = pan_speed
         
         print(f"[Camera] ✅ Camera controller initialized.")
 

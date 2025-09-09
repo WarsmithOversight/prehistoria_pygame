@@ -12,11 +12,11 @@ from .event_bus import EventBus
 from .hazard_manager import HazardManager
 from .ui.hazard_view import HazardView
 from .player import Player
-from .collectibles import seed_collectibles
+from .collectible_manager import CollectibleManager
 from .camera_controller import CameraController
 from .game_manager import GameManager
 from .map_interactor import MapInteractor
-from .ui_welcome_panel import UIWelcomePanel
+from .ui.ui_welcome_panel import UIWelcomePanel
 from .movement_manager import MovementManager
 
 # ──────────────────────────────────────────────────
@@ -27,6 +27,7 @@ class GameScene:
 
         # Stores references to global game state objects
         self.manager = manager
+        self.tween_manager = manager.tween_manager
         self.persistent_state = manager.persistent_state
         self.assets_state = manager.assets_state
         self.variable_state = manager.variable_state
@@ -47,16 +48,18 @@ class GameScene:
 
         # 🐣 Create player instances first, so we know their starting locations.
         players = [
-            Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus),
-            Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus)
+            Player(player_id=1, lineage_name="frog", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus, tween_manager=self.tween_manager, variable_state=self.variable_state),
+            Player(player_id=2, lineage_name="bird", all_species_data=all_species_data, tile_objects=self.notebook['tile_objects'], notebook=self.notebook, assets_state=self.assets_state, persistent_state=self.persistent_state, event_bus=event_bus, tween_manager=self.tween_manager, variable_state=self.variable_state)
         ]
-        
-        # 💎 Seed collectibles, now avoiding the players' starting regions.
-        collectible_instances = seed_collectibles(
-            self.persistent_state, self.notebook['tile_objects'],
-            self.notebook, self.manager.tween_manager, players
-        )
 
+        # ✨ Create a single, shared screen glow drawable for all players to use.
+        self.notebook['SCREEN_GLOW'] = {
+            'type': 'screen_glow_overlay',
+            'z': self.persistent_state["pers_z_formulas"]["screen_glow_red"](0),
+            'color': 'red',
+            'alpha': 0      # Start fully transparent
+        }
+        
         # ──────────────────────────────────────────────────
         # ✨ 1. Create the manager and the view separately.
         # ──────────────────────────────────────────────────
@@ -67,6 +70,13 @@ class GameScene:
         hazard_view = HazardView(
             self.persistent_state, self.assets_state, self.manager.tween_manager,
             event_bus, hazard_manager, players[0]
+        )
+
+        # 💎 Create the new Collectible Manager, which handles its own seeding.
+        collectible_manager = CollectibleManager(
+            event_bus, self.notebook, self.manager.tween_manager,
+            self.persistent_state, players, self.notebook['tile_objects'],
+            self.manager.scenes["LOADING"].audio_manager
         )
 
         # ──────────────────────────────────────────────────
@@ -82,15 +92,15 @@ class GameScene:
  
         # 🕹️ Create the main game manager instance.
         game_manager = GameManager(
-            players, collectible_instances, camera_controller, self.notebook['tile_objects'], 
-            event_bus, self.notebook, self.persistent_state
+            players, camera_controller, self.notebook['tile_objects'], 
+            event_bus, self.notebook, self.persistent_state, self.manager.tween_manager,
+            hazard_manager=hazard_manager
         )
 
         # 🏃 Create the new Movement Manager specialist
         movement_manager = MovementManager(
             event_bus, self.notebook, self.notebook['tile_objects'], self.manager.tween_manager,
-            self.persistent_state, self.variable_state, players[0], 
-            self.manager.scenes["LOADING"].audio_manager, collectible_instances
+            self.persistent_state, self.variable_state, players[0]
         )
 
         # 🎨 Create the UI Manager, passing it the event bus and the starting player.
@@ -114,7 +124,8 @@ class GameScene:
             'game': game_manager,
             'hazard_manager': hazard_manager,
             'hazard_view': hazard_view,
-            'movement_manager': movement_manager
+            'movement_manager': movement_manager,
+            'collectible_manager': collectible_manager
         }
        
         # Gets the camera controller instance
@@ -159,51 +170,44 @@ class GameScene:
         for k in keys_to_delete: del self.notebook[k]
     
     def handle_events(self, events, mouse_pos):
-
-        # Exits if controllers are not yet initialized or a transition is in progress
-        if not self.controllers or self.manager.is_transitioning: return
+        # 🛑 Exit if controllers aren't ready
+        if not self.controllers: return
         
-        # Gets the game manager instance
         game_manager = self.controllers['game']
  
-         # Manages events based on whether the game is paused
+        # --- Paused (Welcome Screen) Event Loop ---
         if game_manager.is_paused:
-
-            # --- Paused (Welcome Screen) Event Loop ---
             if self.welcome_panel:
                 self.welcome_panel.handle_events(events, mouse_pos)
             self.controllers['camera'].handle_events(events)
-            
-            # Delegate events to the UI, but not anything else since the game is paused
-            ui_handled = self.welcome_panel and self.welcome_panel.rect and self.welcome_panel.rect.collidepoint(mouse_pos)
-            
-        else:
-            # --- Active Game Event Loop ---
-            self.controllers['camera'].handle_events(events)
-            
-            # ✨ Pass events to the new Hazard View first.
-            hazard_ui_handled = self.controllers['hazard_view'].handle_events(events, mouse_pos)
+            return # Stop further event processing while paused.
 
-            # Checks if the UI handled the event
-            ui_handled = self.controllers['ui'].handle_events(events, mouse_pos)
-            
-            # If the UI didn't handle it, delegate to the map interactor
-            if not ui_handled and not hazard_ui_handled:
-                pan, click = self.controllers['interactor'].handle_events(events, mouse_pos)
-                
-                # Handles a click event if it occurred
-                if click: game_manager.handle_click(click)
+        # --- Active Game Event Loop ---
+        if self.manager.is_transitioning: return
 
-                # Pans the camera if the interactor returns a pan value
-                if pan != (0,0): self.controllers['camera'].pan(pan[0], pan[1])
-                            
-            # This logic must be outside the `if not ui_handled` block so keyboard shortcuts work anytime.
-            for event in events:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE:
-                        game_manager.advance_turn()
-                    elif event.key == pygame.K_q:
-                        self.controllers['hazard_view'].toggle_visibility()
+        # ✨ THIS IS THE FIX: Always check for camera keyboard events (WASD).
+        self.controllers['camera'].handle_events(events)
+
+        # Pass events to the Hazard View first.
+        hazard_ui_handled = self.controllers['hazard_view'].handle_events(events, mouse_pos)
+
+        # Then check other UI panels.
+        ui_handled = self.controllers['ui'].handle_events(events, mouse_pos)
+        
+        # If no UI element handled the event, pass it to the map.
+        if not ui_handled and not hazard_ui_handled:
+            pan, click = self.controllers['interactor'].handle_events(events, mouse_pos)
+            if click: game_manager.handle_click(click)
+            # The interactor handles mouse-drag panning
+            if pan != (0,0): self.controllers['camera'].pan(pan[0], pan[1])
+                        
+        # Handle global keyboard shortcuts.
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    game_manager.advance_turn()
+                elif event.key == pygame.K_q:
+                    self.controllers['hazard_view'].toggle_visibility()
 
     def update(self, dt):
 
@@ -220,6 +224,7 @@ class GameScene:
         self.controllers['interactor'].update(mouse_pos) # ✨ Call the new update method
         self.controllers['ui'].update(self.notebook)
         self.controllers['hazard_view'].update(self.notebook)
+        self.controllers['collectible_manager'].update(dt)
 
         # 2. Update systems based on the paused state.
         if self.controllers['game'].is_paused:

@@ -3,7 +3,8 @@
 
 from scenes.game_scene.ui.ui_palette_panel import UIPalettePanel
 from scenes.game_scene.ui.ui_family_portrait import UIFamilyPortraitPanel
-from scenes.game_scene.ui.migration_event_panel import MigrationEventPanel
+from scenes.game_scene.migration_event_manager import MigrationEventPanel
+from scenes.game_scene.ui.ui_extinction_panel import UIExtinctionPanel
 
 DEBUG = True
 
@@ -32,6 +33,8 @@ class UIManager:
             # 👂 Subscribe to game-wide events
             self.event_bus.subscribe("ACTIVE_PLAYER_CHANGED", self.on_active_player_changed)
             self.event_bus.subscribe("PLAYER_POPULATION_CHANGED", self.on_population_changed)
+            self.event_bus.subscribe("PLAYER_EXTINCT", self.on_player_extinct)
+
 
             # --- Initial Panel Creation ---
             # Create static panels like the palette here
@@ -71,6 +74,12 @@ class UIManager:
         else:
             self.is_low_pop_glow_active = False
             glow_drawable['alpha'] = 0 # Turn it off
+
+    def on_player_extinct(self, data):
+        """Handles the game over state by showing the extinction panel."""
+        # 🎨 If there isn't already a game over panel, create one.
+        if "extinction_panel" not in self.static_panels:
+            self.static_panels["extinction_panel"] = UIExtinctionPanel(self.persistent_state, self.assets_state)
 
     def on_active_player_changed(self, new_player):
         """Event handler that fires when the turn changes, rebuilding player-specific UI."""

@@ -2,6 +2,7 @@ import pygame
 from ui.ui_dimensions import get_panel_dimensions
 from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
 from ui.ui_button_components import Button
+from ui.ui_font_and_styles import get_style
 
 DEBUG = True
 
@@ -22,8 +23,8 @@ class UIPalettePanel(BasePanel):
             "trigger_hazard_btn": {
                 "type": "button",
                 "text_options": ["Hazard"],
-                "style": { "font_size_key": "regular_small", "text_color": (255, 200, 200), "align": "center" },
-                "action": lambda: self.event_bus.post("DEBUG_TRIGGER_HAZARD")
+                "style": get_style("button_primary"),
+                "action": lambda: self.event_bus.post("DEBUG_TRIGGER_HAZARD"),
             }
         }
 

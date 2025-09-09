@@ -40,7 +40,7 @@ variable_state["var_current_zoom"] = 1
 variable_state["var_render_offset"] = (0, 0)
 
 # 🌎 World Generation Config
-persistent_state["pers_region_count"] = 16
+persistent_state["pers_region_count"] = 24
 
 # ──────────────────────────────────────────────────
 # 🎬 Initialize Managers

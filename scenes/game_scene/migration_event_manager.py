@@ -29,8 +29,11 @@ class MigrationEvent:
 
 class MigrationEventManager:
     """Manages the master list of events and the logic for selecting them."""
-    def __init__(self):
+    def __init__(self, event_bus):
+        self.event_bus = event_bus
         self.events = []
+        self.active_event = None
+        self.event_bus.subscribe("PLAYER_LANDED_ON_TILE", self.on_player_landed)
         self._initialize_events()
 
     def _initialize_events(self):
@@ -99,6 +102,25 @@ class MigrationEventManager:
         
         return random.choice(eligible_events)
 
+    def set_new_active_event(self):
+        """Selects a new event, sets it as the manager's active event, and returns it."""
+        new_event = self.select_random_event()
+        self.active_event = new_event
+        return new_event
+    
+    def on_player_landed(self, data):
+        """Checks if the player's move triggers the active migration hazard."""
+        if not self.active_event: return
+
+        tile = data["tile"]
+        if not tile: return
+
+        hazardous_terrains = self.active_event.trigger_param
+        if tile.terrain in hazardous_terrains:
+            print(f"[MigrationManager] 📢 Player landed on hazardous terrain ({tile.terrain}). Requesting hazard event.")
+            self.event_bus.post("REQUEST_HAZARD_EVENT", {"trigger": "migration_event"})
+ 
+
 # ──────────────────────────────────────────────────
 # 🖼️ UI Panel (The "Power Tool")
 # ──────────────────────────────────────────────────
@@ -112,15 +134,14 @@ class MigrationEventPanel(BasePanel):
         self.event_bus = event_bus
         self.drawable_key = "migration_event_panel"
         
-        # 🔋 Instantiate the manager (keeping the battery with the tool)
-        self.manager = MigrationEventManager()
-        
+        # 🔋 Instantiate the manager, giving it the event bus
+        self.manager = MigrationEventManager(self.event_bus)
+
         # 🎨 Store child components for animation
         self.event_displays = {} # Maps event_id to its UITextBlock component
 
         # 🚩 State Management
         self.is_animating = False
-        self.active_event = None
         # ✨ A counter to ensure old, overlapping animations don't interfere with new ones.
         self.animation_cycle_id = 0
         
@@ -137,7 +158,7 @@ class MigrationEventPanel(BasePanel):
                 "type": "text_block",
                 "content": event.description,
                 # ✨ Use a style name from our central style guide.
-                "style": get_style("disabled"), # Start with the disabled/muted style
+                "style": get_style("migration_event_muted"), # Use the new specific style
                 "properties": {"max_width": 200}
             }
             # Each event gets its own row for a vertical stack
@@ -194,24 +215,30 @@ class MigrationEventPanel(BasePanel):
             current_y += row_height + pad_y
 
     def on_turn_started(self, event_data=None):
-        """Event handler that triggers the animation when a new turn begins."""
-        self.start_turn_animation()
+        """
+        Event handler for the start of a turn. This now immediately determines
+        the outcome and tells the GameManager, then starts the visual animation.
+        """
+        # 🧠 1. Immediately select the event and post the result. This is the core logic.
+        if not event_data or "player" not in event_data:
+            return
+        final_event = self.manager.set_new_active_event()
+        if not final_event:
+            return
+        self.event_bus.post("MIGRATION_EVENT_SELECTED", {"player": event_data["player"], "event": final_event})
 
-    def start_turn_animation(self):
+        # 🎨 2. Start the purely visual "fluff" animation.
+        self.start_turn_animation(final_event)
+
+
+    def start_turn_animation(self, final_event):
         """Initiates the 'fortune wheel' animation to select a new event."""
-        if self.is_animating: return
 
         # ✨ Increment the cycle ID. Any animations from a previous cycle will now be invalid.
         self.animation_cycle_id += 1
         current_cycle = self.animation_cycle_id
         
-        self.is_animating = True
-        # 1. 🤫 Secretly select the final event beforehand.
-        final_event = self.manager.select_random_event()
-        if not final_event:
-            self.is_animating = False
-            return
-        
+        self.is_animating = True        
         if DEBUG: print(f"[MigrationPanel] 🎰 Fortune wheel starting... secretly chose '{final_event.event_id}'.")
 
         # 2. 📝 Set up the animation sequence.
@@ -231,8 +258,8 @@ class MigrationEventPanel(BasePanel):
                 return
 
             # ✨ Get the style dictionaries once from our central system.
-            style_muted = get_style("disabled")
-            style_highlight = get_style("default") # Use "default" for the highlighted text
+            style_muted = get_style("migration_event_muted")
+            style_highlight = get_style("migration_event_active")
 
             # De-highlight the previous item
             if index > 0:
@@ -241,13 +268,10 @@ class MigrationEventPanel(BasePanel):
 
             # If we are at the end of the sequence, we're done.
             if index >= len(animation_sequence):
-                self.active_event = final_event
                 # ✨ FIX: Manually ensure the final item is and stays highlighted.
-                self.event_displays[self.active_event.event_id].text_color = style_highlight["text_color"]
+                self.event_displays[self.manager.active_event.event_id].text_color = style_highlight["text_color"]
                 self.is_animating = False
-                # 📢 Announce the result to the rest of the game.
-                self.event_bus.post("MIGRATION_EVENT_SELECTED", self.active_event)
-                if DEBUG: print(f"[MigrationPanel] ✅ Animation finished. Event '{self.active_event.event_id}' is active.")
+                if DEBUG: print(f"[MigrationPanel] ✅ Animation finished. Event '{self.manager.active_event.event_id}' is active.")
                 return
 
             # Highlight the current item

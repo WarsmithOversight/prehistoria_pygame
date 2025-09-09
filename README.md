@@ -9,7 +9,6 @@
 - [ ] Add "Load Saved Map" feature
 - [x] Add Loading screen, splash screen and soundtrack
 - [x] Add welcome screen
-- [ ] Move audiomanager loading to loading screen
 
 ## 3. Player 2
 - [x] Player Token and json species entry
@@ -25,18 +24,18 @@
 
 ## 5. Hazard Events
 - [x] Add Hazard Queue
-- [ ] Add Hazard Event
+- [x] Add Hazard Event
 - [x] Implement Ambushers / Seekers / Apex Predators / Rivals / Climate Events
 - [ ] Add Aurornis / Archaeopteryx / Jeholornis
 - [ ] Implement Pack Hunters
-- [ ] Add Empowered Hazards
+- [x] Add Empowered Hazards
 - [ ] Add Evolve Button
 - [ ] Add Glide feature and blue pathfinding line
 - [ ] Implement Healthy / Hungry
 - [ ] Add a ring around player token, red for hungry green for healthy
 - [ ] Add a full screen led glow for low population and on_hazard_event
 - [ ] Add Hazard resolution
-- [ ] Implement Hazard Triggers
+- [x] Implement Hazard Triggers
 - [ ] Add Hazard Card glow
 - [ ] Add Feeding Strategies (Filter / Insectivore / Carnivore / Herbivore / Omnivore)
 - [ ] Add Foraging
@@ -48,3 +47,6 @@
 - [ ] Add region borders
 - [x] Clean up Tiledata before exporting
 - [ ] Add fade to family portrait.
+- [ ] Lock certain actions from being available during a hazard
+- [ ] Allow swapping out hazard cards be deselecting the selected hazard card.
+- [ ] Fix low population glow persisting between players

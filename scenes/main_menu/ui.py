@@ -2,6 +2,7 @@ import pygame
 from ui.ui_button_components import Button
 from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
 from ui.ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
+from ui.ui_font_and_styles import get_style
 
 DEBUG: True
 
@@ -25,19 +26,19 @@ class MainMenuPanel(BasePanel):
             "new_world": {
                 "type": "button",
                 "text_options": ["New World"],
-                "style": {"font_size_key": "regular_large", "text_color": (255, 255, 255), "align": "center"},
+                "style": get_style("button_primary"),
                 "action": self.on_new_world
             },
             "load_world": {
                 "type": "button",
                 "text_options": ["Load Saved World"],
-                "style": {"font_size_key": "regular_large", "text_color": (150, 150, 150), "align": "center"},
+                "style": get_style("button_disabled"),
                 "action": self.on_load_world
             },
             "dev_quickboot": {
                 "type": "button", # Add the type definition
                 "text_options": ["Dev Quickboot"],
-                "style": {"font_size_key": "regular_large", "text_color": (255, 255, 255), "align": "center"},
+                "style": get_style("button_primary"),
                 "action": self.on_dev_quickboot
             }
         }

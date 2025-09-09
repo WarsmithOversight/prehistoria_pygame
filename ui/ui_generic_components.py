@@ -66,13 +66,13 @@ DEBUG = True
 
 class UITextBlock:
     """A UI component for displaying potentially multi-line, wrapped text."""
-    def __init__(self, rect, line_data, style, assets_state): # ✨ Takes pre-wrapped line_data now
+    def __init__(self, rect, line_data, style, assets_state):
         self.rect = rect
         self.style = style
         self.assets_state = assets_state
         self.is_visible = True
         # ✨ Get the font from our new, centralized font system.
-        self.font = get_font(self.style.get("font_size_key", "regular_medium"))
+        self.font = get_font(self.style.get("font_size_key", "regular_14"))
         self.text_color = self.style.get('text_color', (255, 220, 220))
         self.line_height = self.font.get_linesize()
         self.line_data = line_data # ✨ No longer calculates its own wrapping

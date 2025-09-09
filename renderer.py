@@ -27,7 +27,9 @@ def initialize_render_states(persistent_state, notebook):
         "collectible_shadow": lambda r: 1.0 + vert_offset(r) + 0.00071,
         "collectible_glow":   lambda r: 1.0 + vert_offset(r) + 0.00072,
         "collectible_icon":   lambda r: 1.0 + vert_offset(r) + 0.00073,
-        "path_curve":    lambda r: 1.0 + vert_offset(r) + 0.0008,
+        "path_curve":       lambda r: 1.0 + vert_offset(r) + 0.0008,
+        "path_curve_glide": lambda r: 1.0 + vert_offset(r) + 0.00081, # ✨ Add z-formula for the new type
+        "debug_text":    lambda r: 1.0 + vert_offset(r) + 0.00085, # ✨ Add z-formula for debug text
         "player_token":  lambda r: 1.0 + vert_offset(r) + 0.0009,
         "indicator":     lambda r: 2.0,
         "debug_icon":    lambda r: 2.0 + 0.1,
@@ -37,6 +39,7 @@ def initialize_render_states(persistent_state, notebook):
         "region_border": lambda r: 2.0 + 0.5,
         "debug_gap":     lambda r: 2.0 + 0.6,
         "ui_panel":      lambda r: 3.0,
+        "screen_glow_red":lambda r: 3.8,
         "splash_screen": lambda r: 3.9,
         "fade_overlay":  lambda r: 4.0, # Highest z-value, always on top
     }
@@ -90,6 +93,49 @@ def render_giant_z_pot(screen, notebook, persistent_state, assets_state, variabl
 # ──────────────────────────────────────────────────
 # ⌨️ Drawable Interpreters
 # ──────────────────────────────────────────────────
+
+def debug_tile_text_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
+    """Renders text on a rounded, semi-transparent background for debugging."""
+    text_str = drawable.get('text', '')
+    if not text_str:
+        return
+
+    # ⚙️ Get font and state
+    zoom = variable_state.get("var_current_zoom", 1.0)
+    # Make font size smaller at high zoom levels to avoid clutter
+    font_size = 12 if zoom > 0.5 else 14
+    if font_size not in FONT_CACHE:
+        FONT_CACHE[font_size] = pygame.font.Font(None, font_size)
+    font = FONT_CACHE[font_size]
+
+    # ✍️ Anti-jagged text trick: render white text on black, then make black transparent
+    text_surf = font.render(text_str, True, (255, 255, 255), (0, 0, 0))
+    text_surf.set_colorkey((0, 0, 0))
+    text_rect = text_surf.get_rect()
+
+    # 🎨 Create the rounded, semi-transparent background
+    padding = 6
+    bg_rect = pygame.Rect(0, 0, text_rect.width + padding, text_rect.height + padding)
+    bg_surf = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+    bg_color = (0, 0, 0, 150) # Black with 150/255 alpha
+    border_radius = 5 # How rounded the corners are
+    pygame.draw.rect(bg_surf, bg_color, bg_surf.get_rect(), border_radius=border_radius)
+
+    # 📍 Calculate position
+    q, r = drawable['q'], drawable['r']
+    px, py = hex_to_pixel(q, r, persistent_state, variable_state)
+    
+    # Center the background, then shift it up
+    bg_rect.center = (px, py)
+    vertical_offset = -int(35 * zoom) # Shift text up
+    bg_rect.move_ip(0, vertical_offset)
+    
+    # Center the text on the background
+    text_rect.center = bg_rect.center
+
+    # ✨ Blit to the main screen
+    screen.blit(bg_surf, bg_rect)
+    screen.blit(text_surf, text_rect)
 
 def splash_screen_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """A simple interpreter that blits a pre-rendered surface, like a splash screen."""
@@ -472,6 +518,13 @@ def _draw_bezier_curve(surface, p0, p1, p2, thickness, color):
 def path_curve_interpreter(screen, drawable, persistent_state, assets_state, variable_state):
     """Draws a smooth curve inside a tile based on the path's entry and exit points."""
     
+    # ✨ 1. Determine color based on the drawable's type.
+    drawable_type = drawable.get('type')
+    if drawable_type == 'path_curve_glide':
+        color = (177, 33, 255)  # Purple for glide paths
+    else:
+        color = (255, 222, 33)  # Yellow for standard paths
+
     # Retrieves the current, previous, and next hex coordinates from the drawable dictionary
     coord = drawable.get("coord")
     prev_coord = drawable.get("prev_coord")
@@ -529,9 +582,6 @@ def path_curve_interpreter(screen, drawable, persistent_state, assets_state, var
     # Retrieves the current zoom level and calculates the thickness of the line
     zoom = variable_state.get("var_current_zoom", 1.0)
     thickness = max(2, int(16 * zoom))
-
-    # Defines the color for the path line
-    color = (255, 222, 33)
 
     # If the path is a straight line, it is drawn as a simple line
     if is_straight:
@@ -682,9 +732,11 @@ TYPEMAP = {
     "circle": circle_type_interpreter,
     "artwork": artwork_interpreter,
     "path_curve": path_curve_interpreter,
+    "path_curve_glide": path_curve_interpreter,
     "ui_panel": ui_panel_interpreter,
     "splash_screen": splash_screen_interpreter,
     "fade_overlay": fade_overlay_interpreter,
     "screen_glow_overlay": screen_glow_interpreter,
     "indicator": render_indicator,
+    "debug_tile_text": debug_tile_text_interpreter, # ✨ Register the new interpreter
    }

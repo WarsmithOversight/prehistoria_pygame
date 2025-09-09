@@ -101,8 +101,8 @@ class LoadingScene:
         
         except pygame.error: pass
 
-        # ✨ Renders the loading text using the central style system
-        loading_style = get_style("highlight") # "highlight" uses a large, regular font
+        # ✨ Renders the loading text using the new, specific style system
+        loading_style = get_style("loading_screen_status")
         font = get_font(loading_style["font_size_key"])
         text_color = loading_style["text_color"]
         text_surf = font.render("Prehistoria Digital Prototype ... Loading ...", True, text_color)
@@ -213,7 +213,9 @@ class LoadingScene:
 
         # Runs the final step to create the drawable tile objects
         tile_objects = self._run_timed_step("Create Tile Objects", create_tile_objects_from_data, (local_tiledata,))
-        export_tiledata_json
+
+        # ✨ Call the export function and pass it the data to save.
+        self._run_timed_step("Export Tiledata JSON", export_tiledata_json, (local_tiledata,))
 
         # Records the total end time
         total_end_time = time.time()

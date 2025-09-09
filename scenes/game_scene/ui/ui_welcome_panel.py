@@ -6,6 +6,7 @@ from ui.ui_dimensions import get_panel_dimensions, UI_ELEMENT_PADDING
 from ui.ui_base_panel_components import BasePanel, assemble_organic_panel
 from ui.ui_button_components import Button
 from ui.ui_generic_components import UITextBlock
+from ui.ui_font_and_styles import get_style
 
 DEBUG = True
 
@@ -44,13 +45,13 @@ class UIWelcomePanel(BasePanel):
                     "Welcome to the Triassic—lean, volatile, and inventive. Here, the blueprints of the future are drafted in bone and storm."
                     "\n"
                 ),
-                "style": {"font_size_key": "regular_medium", "text_color": (220, 220, 220), "align": "justify"},
+                "style": get_style("paragraph_text"),
                 "properties": {"max_width": 550}
             },
             "continue_button": {
                 "type": "button",
                 "text_options": ["Continue"],
-                "style": {"font_size_key": "regular_medium", "text_color": (255, 255, 255), "align": "center"},
+                "style": get_style("button_primary"),
                 # Point the action to the new method on the scene object
                 "action": lambda: self.scene.start_game()
             }
